@@ -35,7 +35,7 @@ ERROR_LOG_FILE = os.path.join(APP_DIR, "error_log.txt")
 WINDOW_ICON_FILE = os.path.join(APP_DIR, "Assets", "Images", "icon.ico")
 WINDOW_ICON_ICO_FILE = os.path.join(APP_DIR, "icon.ico")
 
-AUTOSAVE_FILE = os.path.join(APP_DIR, "autosave.phbe")
+AUTOSAVE_FILE = os.path.join(APP_DIR, "autosave.alice")
 MUSIC_DIR = os.path.join(APP_DIR, "Assets", "Musics")
 MUSIC_EXTENSIONS = (".mp3", ".wav", ".ogg")
 
@@ -46,15 +46,13 @@ EMPTY_CHAT_ART = r"""
 
 
 
-//////////////////////////////////////////
-//-__ /\\  ,,                ,,         //
-//  ||  \\ ||                ||         //
-// /||__|| ||/\\  /'\\  _-_  ||/|,  _-_ //
-// \||__|| || || || || || \\ || || || \\//
-//  ||  |, || || || || ||/   || |' ||/  //
-//_-||-_/  \\ |/ \\,/  \\,/  \\/   \\,/ //
-//  ||       _/                         //
-//////////////////////////////////////////"""
+{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}
+{}@@@@@@@  @@@  @@@  @@@@@@  @@@@@@@@ @@@@@@@  @@@@@@@@ {}
+{}@@!  @@@ @@!  @@@ @@!  @@@ @@!      @@!  @@@ @@!      {}
+{}@!@@!@!  @!@!@!@! @!@  !@! @!!!:!   @!@!@!@  @!!!:!   {}
+{}!!:      !!:  !!! !!:  !!! !!:      !!:  !!! !!:      {}
+{} :        :   : :  : :. :  : :: ::  :: : ::  : :: ::  {}
+{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}"""
 ENTRY_PLACEHOLDER = "Say something..."
 
 SETTINGS_FILE = os.path.join(APP_DIR, "settings.json")
@@ -63,7 +61,7 @@ ALICE_FILETYPES = [("Phoebe mind file", "*.phbe"), ("All files", "*.*")]
 ALICE_FORMAT_VERSION = 1
 ALICE_ENCRYPTION = "xor-sha256"
 ALICE_NEKO = bytes(
-    value ^ 0x5A for value in base64.b64decode("a2hpbm8=")
+    value ^ 0x5A for value in base64.b64decode("a2toY2lv")
 ).decode("ascii")
 
 EMOJI_FONT = ("Segoe UI Emoji", 11)
@@ -130,6 +128,30 @@ def load_config():
     return config
 
 
+def resolve_music_dir():
+    candidates = []
+    app_root = APP_DIR
+    if getattr(sys, "frozen", False):
+        app_root = os.path.dirname(os.path.abspath(sys.executable))
+        candidates.extend([
+            os.path.join(app_root, "Assets", "Musics"),
+            os.path.join(app_root, "Musics"),
+            os.path.join(getattr(sys, "_MEIPASS", app_root), "Assets", "Musics"),
+        ])
+    candidates.extend([
+        os.path.join(app_root, "Assets", "Musics"),
+        os.path.join(app_root, "Musics"),
+        os.path.join(os.path.dirname(app_root), "Assets", "Musics"),
+    ])
+    seen = set()
+    for candidate in candidates:
+        normalized = os.path.normpath(candidate)
+        if normalized not in seen and os.path.isdir(normalized):
+            seen.add(normalized)
+            return normalized
+    return os.path.join(app_root, "Assets", "Musics")
+
+
 def _strip_unsupported(text):
     return "".join(ch for ch in text if ord(ch) <= 0xFFFF)
 
@@ -145,8 +167,8 @@ class ChatApp:
             "model": "",
             "api_key": "",
             "api_base": "",
-            "system_context": "",
-            "error_message": "Err... :/ Check error_log for more info.",
+            "system_context": "You are Phoebe, a Kuudere yet a helpful, playful, witty, carefree, and a bit silly, yet elegant girl. Communicate in English.",
+            "error_message": "Err... :/",
         }
 
         try:
@@ -345,12 +367,14 @@ class ChatApp:
         self.chat_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.chat_box = tk.Text(
-            self.chat_frame, wrap=tk.WORD, state="disabled", font=TEXT_FONT, borderwidth=0,
+            self.chat_frame, wrap=tk.WORD, state="normal", font=TEXT_FONT, borderwidth=0,
             highlightthickness=0, yscrollcommand=self.chat_scrollbar.set,
+            exportselection=False, selectbackground="#4a90e2", selectforeground="white",
         )
         self.chat_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.chat_box.bind("<Button-3>", self._show_message_menu)
         self.chat_box.bind("<Button-1>", self._clear_message_highlight)
+        self.chat_box.bind("<KeyPress>", self._block_chat_box_input)
         self.chat_scrollbar.configure(command=self.chat_box.yview)
         self.attach_frame = tk.Frame(self.root)
 
@@ -363,7 +387,7 @@ class ChatApp:
         self.attach_thumb_label = tk.Label(self.attach_preview_box)
         self.attach_thumb_label.place(relx=0, rely=0, relwidth=1, relheight=1)
 
-        cancel_icon = self._load_icon("Cancel.png")
+        cancel_icon = self._load_icon("cancel.png")
         self.attach_remove_btn = self._make_icon_button(
             self.attach_preview_box, cancel_icon, "×", "Cancel",
             command=self._clear_attachment,
@@ -446,12 +470,13 @@ class ChatApp:
         return "Light Mode" if self.dark_mode else "Dark Mode"
 
     def _start_music(self):
-        if pygame is None or not os.path.isdir(MUSIC_DIR):
+        music_dir = resolve_music_dir()
+        if pygame is None or not os.path.isdir(music_dir):
             return
 
         self._music_tracks = [
-            os.path.join(MUSIC_DIR, filename)
-            for filename in sorted(os.listdir(MUSIC_DIR))
+            os.path.join(music_dir, filename)
+            for filename in sorted(os.listdir(music_dir))
             if filename.lower().endswith(MUSIC_EXTENSIONS)
         ]
         random.shuffle(self._music_tracks)
@@ -459,7 +484,9 @@ class ChatApp:
             return
 
         try:
-            pygame.mixer.init()
+            if not pygame.mixer.get_init():
+                pygame.mixer.pre_init(44100, -16, 2, 2048)
+                pygame.mixer.init()
             self._music_enabled = True
             self._play_next_music()
         except Exception as e:
@@ -534,6 +561,8 @@ class ChatApp:
         self.dark_mode = not self.dark_mode
         self.view_menu.entryconfigure(self._dark_mode_menu_index, label=self._dark_mode_menu_label())
         self._apply_theme()
+        if self._has_conversation_messages():
+            self._render_messages()
         save_ui_settings(SETTINGS_FILE, {"dark_mode": self.dark_mode})
 
     def _apply_theme(self):
@@ -568,10 +597,11 @@ class ChatApp:
         self.chat_box.tag_config("bold", font=TEXT_FONT_BOLD)
         self.chat_box.tag_config("italic", font=TEXT_FONT_ITALIC)
         self.chat_box.tag_config("bold_italic", font=TEXT_FONT_BOLD_ITALIC)
-        self.chat_box.tag_config("code", font=CODE_FONT, background=t["code_bg"], foreground=t["code_fg"])
+        self.chat_box.tag_config("code", font=CODE_FONT, background=t["code_bg"], foreground=t["code_fg"],
+                                lmargin1=2, lmargin2=2, rmargin=4)
         self.chat_box.tag_config(
             "codeblock", font=CODE_FONT_BLOCK, background=t["code_bg"], foreground=t["code_fg"],
-            spacing1=2, spacing3=2,
+            spacing1=6, spacing3=6, lmargin1=12, lmargin2=12, rmargin=10,
         )
 
         self.chat_frame.configure(bg=t["root_bg"])
@@ -747,6 +777,15 @@ class ChatApp:
     def _message_tag(self, message_index):
         return f"message_{message_index}" if message_index is not None else None
 
+    def _block_chat_box_input(self, event):
+        if event.state & 0x4:
+            return
+        if event.keysym in {"Return", "BackSpace", "Delete", "Tab"}:
+            return "break"
+        if event.keysym in {"Left", "Right", "Up", "Down", "Home", "End", "Prior", "Next"}:
+            return
+        return "break"
+
     def _highlight_message(self, message_index):
         message_tag = self._message_tag(message_index)
         self.chat_box.tag_remove("right_clicked", "1.0", tk.END)
@@ -766,6 +805,40 @@ class ChatApp:
 
         message_index = int(message_tags[0].split("_", 1)[1])
         self._show_message_menu_for_index(event, message_index)
+
+    def _message_text_for_copy(self, message_index):
+        if not 0 <= message_index < len(self.messages):
+            return ""
+
+        message = self.messages[message_index]
+        content = message.get("content", "")
+
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "text":
+                    text = part.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "\n".join(parts)
+
+        return str(content)
+
+    def _copy_message(self, message_index):
+        text = self._message_text_for_copy(message_index)
+        if not text:
+            return
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update()
+        except Exception:
+            pass
 
     def _delete_message(self, message_index):
         if not 0 <= message_index < len(self.messages):
@@ -810,6 +883,72 @@ class ChatApp:
         self.chat_box.configure(state="disabled")
         self.chat_box.see(tk.END)
 
+    def _copy_code_block(self, code_text):
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(code_text)
+            self.root.update()
+        except Exception:
+            pass
+
+    def _insert_code_block_window(self, code_text, message_tag=None):
+        t = get_theme(self.dark_mode)
+        wrapper = tk.Frame(
+            self.chat_box,
+            bg=t["code_bg"],
+            highlightbackground=t["chat_fg"],
+            highlightthickness=1,
+            bd=0,
+            padx=8,
+            pady=6,
+        )
+
+        header = tk.Frame(wrapper, bg=t["code_bg"], height=18)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+
+        copy_btn = tk.Button(
+            header,
+            text="Copy",
+            font=("Segoe UI", 8, "bold"),
+            bg=t["button_bg"],
+            fg=t["button_fg"],
+            activebackground=t["button_active_bg"],
+            activeforeground=t["button_fg"],
+            relief="flat",
+            padx=6,
+            pady=0,
+            bd=0,
+            command=lambda: self._copy_code_block(code_text),
+        )
+        copy_btn.pack(side=tk.RIGHT, anchor="ne")
+
+        code_widget = tk.Text(
+            wrapper,
+            height=max(1, code_text.count("\n") + 1),
+            width=100,
+            wrap=tk.WORD,
+            bg=t["code_bg"],
+            fg=t["code_fg"],
+            font=CODE_FONT_BLOCK,
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=0,
+            exportselection=False,
+            selectbackground=t["button_active_bg"],
+            selectforeground=t["chat_fg"],
+        )
+        code_widget.insert("1.0", code_text)
+        code_widget.configure(state="normal")
+        code_widget.bind("<KeyPress>", lambda event: "break")
+        code_widget.pack(fill=tk.BOTH, expand=True)
+
+        window_start = self.chat_box.index(tk.END)
+        self.chat_box.window_create(tk.END, window=wrapper)
+        if message_tag:
+            self.chat_box.tag_add(message_tag, window_start, self.chat_box.index(tk.END))
+        self.chat_box.insert(tk.END, "\n", (message_tag,) if message_tag else ())
+
     def _insert_markdown(self, text, base_tag, message_tag=None):
         lines = text.split("\n")
         n = len(lines)
@@ -819,7 +958,7 @@ class ChatApp:
         for i, line in enumerate(lines):
             if line.strip().startswith("```"):
                 if in_code_block:
-                    self._insert_run("\n".join(code_lines), base_tag, "codeblock", message_tag)
+                    self._insert_code_block_window("\n".join(code_lines), message_tag)
                     if i != n - 1:
                         self.chat_box.insert(tk.END, "\n", (message_tag,) if message_tag else ())
                     code_lines = []
@@ -837,7 +976,7 @@ class ChatApp:
                 self.chat_box.insert(tk.END, "\n", (message_tag,) if message_tag else ())
 
         if in_code_block and code_lines:
-            self._insert_run("\n".join(code_lines), base_tag, "codeblock", message_tag)
+            self._insert_code_block_window("\n".join(code_lines), message_tag)
 
     def _insert_inline_markdown(self, line, base_tag, message_tag=None):
         pos = 0
@@ -912,6 +1051,7 @@ class ChatApp:
     def _show_message_menu_for_index(self, event, message_index):
         self._highlight_message(message_index)
         menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="Copy", command=lambda: self._copy_message(message_index))
         menu.add_command(label="Delete", command=lambda: self._delete_message(message_index))
         menu.tk_popup(event.x_root, event.y_root)
 
@@ -1139,9 +1279,24 @@ class ChatApp:
                 data = resp.json()
                 if isinstance(data, dict) and "error" in data and data["error"]:
                     raise ValueError(str(data["error"]))
+
+                if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+                    image_data = data["data"][0]
+                    if isinstance(image_data, dict):
+                        b64_data = image_data.get("b64_json") or image_data.get("image")
+                        if b64_data:
+                            reply = [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_data}"}}]
+                        else:
+                            url = image_data.get("url")
+                            reply = [{"type": "image_url", "image_url": {"url": url}}] if url else ""
+                        self.messages.append({"role": "assistant", "content": reply})
+                        return
+
                 if not isinstance(data, dict) or not data.get("choices"):
                     raise ValueError("Daily limit reached, Check back after 24 hours.")
-                reply = data["choices"][0]["message"]["content"]
+
+                message = data["choices"][0].get("message", {})
+                reply = self._normalize_message_content(message.get("content", ""))
                 self.messages.append({"role": "assistant", "content": reply})
 
         except Exception as e:
@@ -1153,7 +1308,8 @@ class ChatApp:
         self.root.after(0, self._show_reply, reply)
 
     def _show_reply(self, reply):
-        self._append_labeled_text("Phoebe", reply, "assistant", len(self.messages) - 1)
+        message_index = len(self.messages) - 1
+        self._append_message_content("Phoebe", reply, "assistant", message_index)
         self._set_busy(False)
         self._autosave()
 
@@ -1277,7 +1433,7 @@ class ChatApp:
         if not isinstance(messages, list) or not messages:
             messagebox.showerror(
                 "Invalid conscious file",
-                "This doesn't look like a valid .alice conversation file.",
+                "This doesn't look like a valid .phbe conscious file.",
             )
             return
 
@@ -1303,29 +1459,39 @@ class ChatApp:
             role = msg.get("role")
             content = msg.get("content")
             if role == "system":
-                continue  
+                continue
 
             tag = "user" if role == "user" else "assistant"
             label = "You" if role == "user" else "Phoebe"
-
-            if isinstance(content, str):
-                self._append_labeled_text(label, content, tag, message_index)
-            elif isinstance(content, list):
-                text_parts = [p.get("text", "") for p in content if p.get("type") == "text"]
-                has_image = any(p.get("type") == "image_url" for p in content)
-                if text_parts:
-                    self._append_labeled_text(label, " ".join(text_parts), tag, message_index)
-                elif has_image:
-                    self._append_label_line(label, tag, message_index)
-                for part in content:
-                    if part.get("type") == "image_url":
-                        url = part.get("image_url", {}).get("url", "")
-                        img_path = self._data_url_to_temp_file(url)
-                        if img_path:
-                            self._append_image(img_path, tag, message_index)
+            self._append_message_content(label, content, tag, message_index)
 
         if not self._has_conversation_messages():
             self._show_empty_placeholder()
+
+    def _image_url_to_temp_file(self, url):
+        if not isinstance(url, str) or not url.strip():
+            return None
+
+        if url.startswith("data:"):
+            return self._data_url_to_temp_file(url)
+
+        if not url.startswith(("http://", "https://")):
+            return None
+
+        try:
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "image/png")
+            mime = content_type.split(";", 1)[0].strip() or "image/png"
+            ext = mimetypes.guess_extension(mime) or ".png"
+            fd, tmp_path = tempfile.mkstemp(suffix=ext, prefix="alice_img_")
+            with os.fdopen(fd, "wb") as f:
+                f.write(response.content)
+            self._temp_render_files.append(tmp_path)
+            return tmp_path
+        except Exception as e:
+            print(f"[IMAGE FETCH ERROR] {e}")
+            return None
 
     def _data_url_to_temp_file(self, data_url):
         try:
@@ -1341,6 +1507,87 @@ class ChatApp:
         except Exception as e:
             print(f"[IMAGE DECODE ERROR] {e}")
             return None
+
+    def _normalize_message_content(self, content):
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            if content is None:
+                return ""
+            return str(content)
+
+        text_parts = []
+        image_urls = []
+
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+
+            part_type = part.get("type")
+            if part_type in ("text", "input_text", "output_text"):
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    text_parts.append(text)
+            elif part_type == "image_url":
+                image_url = part.get("image_url")
+                if isinstance(image_url, dict):
+                    url = image_url.get("url")
+                else:
+                    url = image_url
+                if isinstance(url, str) and url.strip():
+                    image_urls.append(url)
+            elif part_type == "image":
+                image_value = part.get("image") or part.get("b64_json")
+                if isinstance(image_value, str) and image_value.strip():
+                    image_urls.append(f"data:image/png;base64,{image_value}")
+
+        normalized = []
+        if text_parts:
+            normalized.append({"type": "text", "text": " ".join(text_parts)})
+        for image_url in image_urls:
+            normalized.append({"type": "image_url", "image_url": {"url": image_url}})
+
+        return normalized if normalized else ""
+
+    def _append_message_content(self, label, content, tag=None, message_index=None):
+        if isinstance(content, str):
+            if content.strip():
+                self._append_labeled_text(label, content, tag, message_index)
+            return
+
+        if not isinstance(content, list):
+            text = str(content)
+            if text.strip():
+                self._append_labeled_text(label, text, tag, message_index)
+            return
+
+        text_parts = []
+        image_urls = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") in ("text", "input_text", "output_text"):
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    text_parts.append(text)
+            elif part.get("type") == "image_url":
+                image_url = part.get("image_url", {})
+                if isinstance(image_url, dict):
+                    url = image_url.get("url")
+                else:
+                    url = image_url
+                if isinstance(url, str) and url.strip():
+                    image_urls.append(url)
+
+        if text_parts:
+            self._append_labeled_text(label, " ".join(text_parts), tag, message_index)
+        elif image_urls:
+            self._append_label_line(label, tag, message_index)
+
+        for image_url in image_urls:
+            tmp_path = self._image_url_to_temp_file(image_url)
+            if tmp_path:
+                self._append_image(tmp_path, tag, message_index)
 
     def _cleanup_temp_render_files(self):
         for p in self._temp_render_files:
