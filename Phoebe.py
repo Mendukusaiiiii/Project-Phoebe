@@ -35,7 +35,7 @@ ERROR_LOG_FILE = os.path.join(APP_DIR, "error_log.txt")
 WINDOW_ICON_FILE = os.path.join(APP_DIR, "Assets", "Images", "icon.ico")
 WINDOW_ICON_ICO_FILE = os.path.join(APP_DIR, "icon.ico")
 
-AUTOSAVE_FILE = os.path.join(APP_DIR, "autosave.alice")
+AUTOSAVE_FILE = os.path.join(APP_DIR, "_reset_personalitdelete_me_toy.phbe")
 MUSIC_DIR = os.path.join(APP_DIR, "Assets", "Musics")
 MUSIC_EXTENSIONS = (".mp3", ".wav", ".ogg")
 
@@ -1402,7 +1402,7 @@ class ChatApp:
     def _save_conversation_as(self):
         path = filedialog.asksaveasfilename(
             title="Save Concsious",
-            defaultextension=".alice",
+            defaultextension=".phbe",
             filetypes=ALICE_FILETYPES,
         )
         if not path:
