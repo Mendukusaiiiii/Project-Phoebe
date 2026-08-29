@@ -1,0 +1,6 @@
+README.md
+setup.py
+Phoebe.egg-info/PKG-INFO
+Phoebe.egg-info/SOURCES.txt
+Phoebe.egg-info/dependency_links.txt
+Phoebe.egg-info/top_level.txt
