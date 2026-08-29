@@ -16,7 +16,7 @@ build_exe_options = {
 
 setup(
     name="Phoebe",
-    version="1.0",
+    version="1.0.0",
     description="Project Phoebe AI Assistant",
     options={"build_exe": build_exe_options},
     executables=[
