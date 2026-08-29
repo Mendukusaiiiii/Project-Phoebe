@@ -20,14 +20,6 @@ Before running the app, make sure you have:
 - pip installed
 - An AI provider with an OpenAI-compatible API endpoint
 
-Common examples:
-
-- Gemeni
-- OpenRouter
-- OpenAI
-- Local Ollama server
-- Any compatible API service that supports `/chat/completions`
-
 ---
 
 ## 1) Install Python dependencies
