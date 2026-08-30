@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import time
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from urllib.parse import urlparse
@@ -97,6 +98,11 @@ MARKDOWN_TOKEN_RE = re.compile(
     r"|(?P<italic>\*[^*]+\*|_[^_]+_)"
 )
 
+URL_RE = re.compile(
+    r"(?P<url>(?:https?://|www\.)[^\s<>\"'\)\]]+)",
+    re.IGNORECASE,
+)
+
 def log_app_error(message):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"[{timestamp}] {message}\n"
@@ -167,7 +173,7 @@ class ChatApp:
             "model": "",
             "api_key": "",
             "api_base": "",
-            "system_context": "You are Phoebe, a Kuudere yet a helpful, playful, witty, carefree, and a bit silly, yet elegant girl. Communicate in English.",
+            "system_context": "",
             "error_message": "Err... :/",
         }
 
@@ -202,6 +208,7 @@ class ChatApp:
         self._preview_anim_job = None   
         self.current_conversation_path = None
         self._temp_render_files = []
+        self._link_counter = 0
         ui_settings = load_ui_settings(SETTINGS_FILE)
         self.dark_mode = bool(ui_settings.get("dark_mode", False))
         self.online = None
@@ -302,13 +309,28 @@ class ChatApp:
         return "attach_dark.png" if self.dark_mode else "attach_light.png"
 
     def _resolve_attach_icon(self):
+        if self.dark_mode:
+            icon = self._load_icon("dark_file_send.png")
+            if icon is not None:
+                return icon
         return self._load_icon("file_send.png")
 
     def _emoji_icon_filename(self):
         return "emoji_dark.png" if self.dark_mode else "emoji_light.png"
 
     def _resolve_emoji_icon(self):
+        if self.dark_mode:
+            icon = self._load_icon("dark_emoji.png")
+            if icon is not None:
+                return icon
         return self._load_icon("emoji.png")
+
+    def _resolve_cancel_icon(self):
+        if self.dark_mode:
+            icon = self._load_icon("dark_cancel.png")
+            if icon is not None:
+                return icon
+        return self._load_icon("cancel.png")
 
     def _make_icon_button(self, parent, icon, fallback_text, fallback_label, **kwargs):
         if icon is not None:
@@ -387,7 +409,7 @@ class ChatApp:
         self.attach_thumb_label = tk.Label(self.attach_preview_box)
         self.attach_thumb_label.place(relx=0, rely=0, relwidth=1, relheight=1)
 
-        cancel_icon = self._load_icon("cancel.png")
+        cancel_icon = self._resolve_cancel_icon()
         self.attach_remove_btn = self._make_icon_button(
             self.attach_preview_box, cancel_icon, "×", "Cancel",
             command=self._clear_attachment,
@@ -603,6 +625,12 @@ class ChatApp:
             "codeblock", font=CODE_FONT_BLOCK, background=t["code_bg"], foreground=t["code_fg"],
             spacing1=6, spacing3=6, lmargin1=12, lmargin2=12, rmargin=10,
         )
+        self.chat_box.tag_config(
+            "hyperlink",
+            foreground=t.get("hyperlink", "#8ab4f8" if self.dark_mode else "#1a73e8"),
+            underline=True,
+        )
+        self.chat_box.tag_raise("hyperlink")
 
         self.chat_frame.configure(bg=t["root_bg"])
         self._ttk_style.configure(
@@ -629,6 +657,10 @@ class ChatApp:
             activebackground=t["attach_remove_active_bg"],
             activeforeground=t["attach_remove_active_fg"],
         )
+        if getattr(self.attach_remove_btn, "uses_icon", False):
+            new_cancel_icon = self._resolve_cancel_icon()
+            if new_cancel_icon:
+                self.attach_remove_btn.configure(image=new_cancel_icon)
 
         self.entry.configure(
             bg=t["entry_bg"], fg=t["entry_fg"], insertbackground=t["entry_insert"],
@@ -1004,13 +1036,61 @@ class ChatApp:
         if not text:
             return
         tags = tuple(tg for tg in (base_tag, style_tag, message_tag) if tg)
+        self._insert_text_with_links(text, tags)
+
+    def _insert_text_with_links(self, text, tags):
+        pos = 0
+        for m in URL_RE.finditer(text):
+            if m.start() > pos:
+                self._insert_plain(text[pos:m.start()], tags)
+            self._insert_link(m.group("url"), tags)
+            pos = m.end()
+
+        if pos < len(text):
+            self._insert_plain(text[pos:], tags)
+
+    def _insert_plain(self, text, tags):
+        if not text:
+            return
         try:
             self.chat_box.insert(tk.END, text, tags)
         except tk.TclError:
             self.chat_box.insert(tk.END, _strip_unsupported(text), tags)
 
+    def _insert_link(self, url, tags):
+        trailing = ""
+        while url and url[-1] in ".,;:!?)]}\u201d\u2019'\"":
+            trailing = url[-1] + trailing
+            url = url[:-1]
+
+        if not url:
+            self._insert_plain(trailing, tags)
+            return
+
+        self._link_counter += 1
+        link_tag = f"link_{self._link_counter}"
+        full_tags = tuple(tags) + (link_tag, "hyperlink")
+
+        try:
+            self.chat_box.insert(tk.END, url, full_tags)
+        except tk.TclError:
+            self.chat_box.insert(tk.END, _strip_unsupported(url), full_tags)
+
+        target = url if url.lower().startswith(("http://", "https://")) else f"http://{url}"
+        self.chat_box.tag_bind(link_tag, "<Button-1>", lambda e, u=target: self._open_link(u))
+        self.chat_box.tag_bind(link_tag, "<Enter>", lambda e: self.chat_box.configure(cursor="hand2"))
+        self.chat_box.tag_bind(link_tag, "<Leave>", lambda e: self.chat_box.configure(cursor=""))
+
+        if trailing:
+            self._insert_plain(trailing, tags)
+
+    def _open_link(self, url):
+        try:
+            webbrowser.open(url, new=2)
+        except Exception as e:
+            log_app_error(f"Could not open link {url}: {e}")
+
     def _append_image(self, path, tag=None, message_index=None):
-        """Insert a static or animated image inline into the chat box."""
         self._remove_empty_placeholder()
         try:
             img = Image.open(path)
