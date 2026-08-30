@@ -160,9 +160,9 @@ Copy this exact template into `config.json` and replace the values:
 
 ```json
 {
-  "model": "openai/gpt-4o-mini",
+  "model": "gemini-2.0-flash",
   "api_key": "your_api_key_here",
-  "api_base": "https://openrouter.ai/api/v1",
+  "api_base": "https://generativelanguage.googleapis.com/v1beta/openai",
   "system_context": "You are a helpful assistant.",
   "error_message": "Err... :/ Check error_log for more info."
 }
