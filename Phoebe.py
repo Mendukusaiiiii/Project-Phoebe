@@ -62,7 +62,7 @@ ALICE_FILETYPES = [("Phoebe mind file", "*.phbe"), ("All files", "*.*")]
 ALICE_FORMAT_VERSION = 1
 ALICE_ENCRYPTION = "xor-sha256"
 ALICE_NEKO = bytes(
-    value ^ 0x5A for value in base64.b64decode("a2toY2lv")
+    value ^ 0x5A for value in base64.b64decode("a2hpbm8=")
 ).decode("ascii")
 
 EMOJI_FONT = ("Segoe UI Emoji", 11)
