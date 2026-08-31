@@ -556,7 +556,7 @@ async def filteradd(interaction: discord.Interaction, word: str):
     await interaction.response.send_message(f"Added `{word}` to the automod filter.", ephemeral=True)
 
 
-@bot.tree.command(name="filterremove", description="Remove a word orphrase from the automod filter for this server")
+@bot.tree.command(name="filterremove", description="Remove a word or phrase from the automod filter for this server")
 @app_commands.describe(word="The word or phrase to remove")
 @app_commands.default_permissions(moderate_members=True)
 @has_mod_role()
@@ -618,7 +618,7 @@ async def warnings_cmd(interaction: discord.Interaction, user: discord.Member):
 @bot.tree.command(name="help", description="Help me!")
 async def custom_help(interaction: discord.Interaction):
     help_text = (
-        "Bot CMDS:\n"
+        "Al1ce CMDS:\n"
         "\n"
         "`/help`        - show help message\n"
         "`/clearmemory` - clears AI memory\n"
