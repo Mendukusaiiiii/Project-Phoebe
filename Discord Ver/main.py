@@ -424,7 +424,7 @@ async def warn(interaction: discord.Interaction, user: discord.Member, reason: s
     await interaction.response.send_message(confirmation, ephemeral=True)
 
 
-@bot.tree.command(name="mute", description="Set a timeout for a user for a set duration")
+@bot.tree.command(name="mute", description="Set a timeout on a user for a set duration")
 @app_commands.describe(
     user="The user to mute",
     reason="Reason for the mute",
