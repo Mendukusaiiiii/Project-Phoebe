@@ -428,7 +428,7 @@ async def warn(interaction: discord.Interaction, user: discord.Member, reason: s
 @app_commands.describe(
     user="The user to mute",
     reason="Reason for the mute",
-    duration="Duration, ex. 10m, 2h, 3d (max 28d)"
+    duration="Duration, e.g. 10m, 2h, 3d (max 28d)"
 )
 @app_commands.default_permissions(moderate_members=True)
 @has_mod_role()
@@ -488,7 +488,7 @@ async def mute(interaction: discord.Interaction, user: discord.Member, reason: s
 @app_commands.describe(
     user="The user to ban",
     reason="Reason for the ban",
-    duration="Optional: ex: 10m, 2h, 3d, 1w. Leave blank for a permanent ban."
+    duration="Optional: e.g. 10m, 2h, 3d, 1w. Leave blank for a permanent ban."
 )
 @app_commands.default_permissions(ban_members=True)
 @has_mod_role()
