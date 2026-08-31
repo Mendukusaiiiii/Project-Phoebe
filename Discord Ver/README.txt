@@ -85,3 +85,6 @@ Banned word filter: matching messages are auto-deleted and issue a warning. User
 STATUS (inside on_ready in bot.py):
 status = discord.Status.idle   # Options: online, idle, dnd, invisible
 activity = discord.Activity(type=discord.ActivityType.watching, name="<YOUR_STATUS_MESSAGE>")
+
+Dock Image Needed:
+Python 3.14
