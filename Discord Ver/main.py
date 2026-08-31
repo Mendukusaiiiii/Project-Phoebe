@@ -618,7 +618,7 @@ async def warnings_cmd(interaction: discord.Interaction, user: discord.Member):
 @bot.tree.command(name="help", description="Help me!")
 async def custom_help(interaction: discord.Interaction):
     help_text = (
-        "Al1ce CMDS:\n"
+        "Bot CMDS:\n"
         "\n"
         "`/help`        - show help message\n"
         "`/clearmemory` - clears AI memory\n"
