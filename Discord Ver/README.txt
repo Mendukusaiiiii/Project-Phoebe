@@ -1,78 +1,87 @@
-Project Phoebe Discord Bot
+Discord AI Bot
 
-A Python Discord bot that responds in a configured channel using an OpenAI-compatible AI provider.
+ABOUT:
+A Python-based Discord bot that integrates with an AI API to provide AI-generated responses.
+Includes a moderation system with warnings, mutes, temporary and permanent bans, spam detection, and a banned word filter.
 
-Features:
-- Channel-based activation with /setup and /unsetup
-- Per-user memory tracking
-- Simple slash-style commands
-- OpenAI-compatible API support
-- Custom system prompt and error message
+FEATURES:
 
-Files:
-- main.py - Main bot script
-- config.json - AI and bot settings
-- requirements.txt - Python dependencies
+User memory
 
-Requirements:
-- Python 3.10+
-- A Discord bot token
-- An AI provider with an OpenAI-compatible API endpoint
+Channel lock and unlock
 
-Setup:
+Native Discord slash commands (appear in the "/" picker with descriptions)
 
-1. Install dependencies
+Moderation commands: /warn, /mute, /ban (with optional duration and auto-unban), /warnings (view history)
 
-   python -m pip install -r requirements.txt
+Automod: spam detection for repeated messages, configurable banned word filter (/filteradd, /filterremove, /filterlist)
 
-2. Edit config.json
+Role-based permissions: assign mod/admin bot-command access to roles without needing Discord’s native Administrator or Moderate Members permission (/setmodrole, /removemodrole, /modroles, /setadminrole, /removeadminrole, /adminroles)
 
-   Example:
-   {
-     "model": "gpt-4o-mini",
-     "api_key": "YOUR_API_KEY",
-     "api_base": "https://api.openai.com/v1",
-     "system_context": "You are a helpful assistant.",
-     "error_message": "Err... :/",
-     "channel_id": ""
-   }
+Owner-only utility commands: /setup, /unsetup, /test, /stoptest
 
-   Field notes:
-   - model: model name supported by your AI provider
-   - api_key: your provider API key
-   - api_base: OpenAI-compatible API base URL
-   - system_context: assistant personality/instructions
-   - error_message: message shown if a request fails
-   - channel_id: automatically set by /setup
+/say command to make the bot post a message
 
-   Common examples:
-   - OpenAI: model = gpt-4o-mini, api_base = https://api.openai.com/v1
-   - OpenRouter: model = openai/gpt-4o-mini, api_base = https://openrouter.ai/api/v1
-   - Gemini-compatible endpoint: model = gemini-2.0-flash, api_base = https://generativelanguage.googleapis.com/v1beta/openai
-   - Ollama: model = llama3.2, api_base = http://localhost:11434/v1
+PROJECT FILES:
 
-3. Add your Discord bot token
+bot.py - Main Python script that runs the bot
 
-   Open main.py and replace the empty value in:
-   bot.run("")
+config.json - Configuration file (API key, model, settings, active channels, mod/admin roles, scheduled unbans)
 
-   with your actual bot token.
+filtered_words.json - Per-server banned word list (auto-created if missing)
 
-4. Run the bot
+warnings.json - Per-server, per-user warning history (auto-created if missing)
 
-   python main.py
+requirements.txt - Python dependencies for Katabump or local hosting
 
-Commands:
-- /setup - Enables the bot in the current text channel
-- /unsetup - Disables the bot in the selected channel
-- /help - Shows available commands
-- /clearmemory - Clears the user's memory
-- /test and /stoptest - Demo binary message loop
+.env - Stores Discord bot token and owner ID (not committed or shared)
 
-Important:
-- The bot only responds in the setup channel.
-- It ignores bot messages and messages starting with '/'.
-- If the API call fails, the configured error_message is returned.
+SETUP INSTRUCTIONS:
 
-Disclaimer:
-This project connects to third-party AI services using your own API key and provider configuration. You are responsible for all usage, billing, rate limits, and compliance with provider terms. The developer is not responsible for API failures, service outages, or issues caused by external providers or incorrect settings.
+Step 1: Edit config.json
+Update the following fields:
+
+api_key: Replace with your OpenRouter API key
+
+system_context: Customize the assistant personality
+
+error_message: Change the fallback message shown on error
+
+Note: channels, mod_roles, admin_roles, and scheduled_unbans are managed automatically by the bot.
+
+Step 2: Create .env
+Do not put your token directly in bot.py. Create a file named ".env" in the same folder as bot.py and add:
+DISCORD_BOT_TOKEN=<YOUR_BOT_TOKEN>
+OWNER_ID=<YOUR_DISCORD_USER_ID>
+
+OWNER_ID is required for owner-only commands and full mod/admin access.
+Ensure requirements.txt includes python-dotenv.
+
+Step 3: Sync slash commands
+Commands register automatically on startup (bot.tree.sync runs in on_ready).
+Global sync may take up to an hour; for faster testing, sync to a single server.
+
+Step 4: Permissions
+Moderation commands are available to:
+
+The bot owner (OWNER_ID)
+
+Users with native Discord permissions (Administrator or Moderate Members)
+
+Roles registered via /setmodrole or /setadminrole
+
+MODERATION NOTES:
+
+/warn and /mute DM the user automatically (fallback if DMs are closed)
+
+/mute uses Discord’s native timeout, maximum 28 days
+
+/ban supports optional durations (10m, 2h, 3d, 1w). Omit for permanent ban. Temporary bans are tracked in config.json and auto-unban even after restarts
+
+Spam detection: 5 identical messages within 60 seconds are auto-deleted and issue a warning. Users with Moderate Members permission are exempt
+
+Banned word filter: matching messages are auto-deleted and issue a warning. Users with Moderate Members permission are exempt
+
+STATUS (inside on_ready in bot.py):
+status = discord.Status.idle   # Options: online, idle, dnd, invisible
+activity = discord.Activity(type=discord.ActivityType.watching, name="<YOUR_STATUS_MESSAGE>")
