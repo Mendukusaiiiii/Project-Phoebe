@@ -1,3 +1,7 @@
+#I honestly have no idea how this worked
+#There's alot of bugs that I didn't dare fix nor have plans to fix but hey atleast it works
+#:3
+
 import os
 import random
 import asyncio
@@ -618,7 +622,7 @@ async def warnings_cmd(interaction: discord.Interaction, user: discord.Member):
 @bot.tree.command(name="help", description="Help me!")
 async def custom_help(interaction: discord.Interaction):
     help_text = (
-        "Bot CMDS:\n"
+        "Al1ce CMDS:\n"
         "\n"
         "`/help`        - show help message\n"
         "`/clearmemory` - clears AI memory\n"
@@ -629,11 +633,24 @@ async def custom_help(interaction: discord.Interaction):
 
 @bot.tree.command(name="say", description="Make the bot say something")
 @app_commands.describe(message="What the bot should say")
-@app_commands.default_permissions(administrator=True)
-@has_admin_role()
+@app_commands.default_permissions(moderate_members=True)
+@has_mod_role()
 async def say(interaction: discord.Interaction, message: str):
     await interaction.channel.send(message)
-    await interaction.response.send_message("Sent.", ephemeral=True)
+    preview = message if len(message) <= 200 else message[:200] + "..."
+    confirmation = f"Sent:\n> {preview}"
+
+    sent_message = None
+
+    if sent_message is not None:
+        async def _auto_delete(msg):
+            await asyncio.sleep(5)
+            try:
+                await msg.delete()
+            except discord.HTTPException:
+                pass
+
+        asyncio.create_task(_auto_delete(sent_message))
 
 
 @bot.tree.command(name="clearmemory", description="Clear your conversation memory")
