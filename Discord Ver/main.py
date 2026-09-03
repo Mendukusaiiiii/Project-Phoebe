@@ -133,7 +133,7 @@ if _legacy_warnings:
     save_warnings(warnings_data)
     save_config(config)
 
-scheduled_unbans = config.setdefault("scheduled_unbans", [])  # [{guild_id, user_id, unban_at}]
+scheduled_unbans = config.setdefault("scheduled_unbans", [])  
 
 DURATION_PATTERN = re.compile(r"^(\d+)\s*([smhdw])$", re.IGNORECASE)
 DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
@@ -263,12 +263,54 @@ async def schedule_unban(guild_id: int, user_id: int, delay_seconds: float):
     await asyncio.sleep(delay_seconds)
     await unban_user(guild_id, user_id)
 
-#
+
 _legacy_channel_id = config.pop("channel_id", None)
 if _legacy_channel_id is not None:
     print(f"[MIGRATION] Found legacy channel_id={_legacy_channel_id}. "
           "Please re-run /setup in the server to register it under 'channels'.")
     save_config(config)
+
+async def console_listener():
+    await bot.wait_until_ready()
+    loop = asyncio.get_event_loop()
+    print("[CONSOLE] Ready. Type: say <channel_id> <message>")
+    while True:
+        try:
+            line = await loop.run_in_executor(None, input, "")
+        except (EOFError, KeyboardInterrupt):
+            break
+
+        line = line.strip()
+        if not line:
+            continue
+
+        parts = line.split(" ", 2)
+        if len(parts) < 3 or parts[0].lower() != "say":
+            print("[CONSOLE] Usage: say <channel_id> <message>")
+            continue
+
+        _, channel_id_str, text = parts
+        try:
+            channel_id = int(channel_id_str)
+        except ValueError:
+            print(f"[CONSOLE] '{channel_id_str}' is not a valid channel ID.")
+            continue
+
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(channel_id)
+            except (discord.NotFound, discord.Forbidden) as e:
+                print(f"[CONSOLE] Could not find/access channel {channel_id}: {e}")
+                continue
+
+        try:
+            await channel.send(text)
+            print(f"[CONSOLE] Sent to #{getattr(channel, 'name', channel_id)}: {text}")
+        except discord.Forbidden:
+            print(f"[CONSOLE] Missing permission to send in channel {channel_id}.")
+        except discord.HTTPException as e:
+            print(f"[CONSOLE] Failed to send message: {e}")
 
 
 @bot.event
@@ -298,6 +340,11 @@ async def on_ready():
             asyncio.create_task(unban_user(entry["guild_id"], entry["user_id"]))
         else:
             asyncio.create_task(schedule_unban(entry["guild_id"], entry["user_id"], delay))
+
+    # Start the console listener task once, on first ready.
+    if not getattr(bot, "_console_listener_started", False):
+        bot._console_listener_started = True
+        bot.loop.create_task(console_listener())
 
 
 @bot.tree.command(name="setup", description="Set the channel as the bot's active channel")
@@ -629,10 +676,24 @@ async def custom_help(interaction: discord.Interaction):
 
 @bot.tree.command(name="say", description="Make the bot say something")
 @app_commands.describe(message="What the bot should say")
-@app_commands.default_permissions(administrator=True)
-@has_admin_role()
+@app_commands.default_permissions(moderate_members=True)
+@has_mod_role()
 async def say(interaction: discord.Interaction, message: str):
-    await interaction.response.send_message(message)
+    await interaction.channel.send(message)
+    preview = message if len(message) <= 200 else message[:200] + "..."
+    confirmation = f"Sent:\n> {preview}"
+
+    sent_message = None
+
+    if sent_message is not None:
+        async def _auto_delete(msg):
+            await asyncio.sleep(5)
+            try:
+                await msg.delete()
+            except discord.HTTPException:
+                pass
+
+        asyncio.create_task(_auto_delete(sent_message))
 
 
 @bot.tree.command(name="clearmemory", description="Clear your conversation memory")
