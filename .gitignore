@@ -1,0 +1,2 @@
+Add-Content "Project Phoebe\.gitignore" "build/"
+Add-Content "Project Phoebe\.gitignore" "setup.py"
