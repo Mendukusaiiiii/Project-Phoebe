@@ -1,2 +1,0 @@
-Add-Content ".gitignore" "build/"
-Add-Content ".gitignore" "setup.py"
