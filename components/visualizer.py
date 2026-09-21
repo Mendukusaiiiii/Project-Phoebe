@@ -18,8 +18,12 @@ TICK_LIT_COLOR = "#bff3ff"
 TICK_DIM_COLOR = "#123244"
 GLITCH_COLOR = "#ff2b6b"
 BLINK_COLOR = "#ffffff"
-BLINK_DURATION = 0.9   # seconds the outer ring blinks for after a chat clear
-BLINK_HZ = 6.0          # on/off flashes per second during the blink
+BLINK_DURATION = 0.9   
+BLINK_HZ = 6.0          
+ERROR_BLINK_COLOR = "#ff2b2b"
+ERROR_BLINK_DURATION = 1.2   
+SHAKE_DURATION = 0.9         
+SHAKE_AMPLITUDE = 0.10       
 
 THINK_TAG_RE = re.compile(r"<think>(.*?)</think>", re.IGNORECASE | re.DOTALL)
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -160,6 +164,8 @@ class ThoughtVisualizer:
         self._glitch_angle_jitter = 0.0
         self._glitch_radius_scale = 1.0
         self._blink_until = 0.0
+        self._error_blink_until = 0.0
+        self._shake_until = 0.0
         self._refresh_config_error()
 
     def set_online(self, online):
@@ -232,14 +238,15 @@ class ThoughtVisualizer:
     def push_reasoning(self, reasoning):
         self.last_reasoning = reasoning or ""
 
-    def recenter(self):
-        self._look_x = 0.0
-        self._look_y = 0.0
-        self._look_target_x = 0.0
-        self._look_target_y = 0.0
-        self._following_cursor = False
-        self._next_glance_time = time.time() + random.uniform(0.8, 1.6)
-        self._blink_until = time.time() + BLINK_DURATION
+    def shake(self):
+        now = time.time()
+        self._shake_until = now + SHAKE_DURATION
+        self._blink_until = now + BLINK_DURATION
+        if self.is_open():
+            self._draw()
+
+    def flash_error(self):
+        self._error_blink_until = time.time() + ERROR_BLINK_DURATION
         if self.is_open():
             self._draw()
 
@@ -374,12 +381,23 @@ class ThoughtVisualizer:
         gaze_reach = max_r * (0.30 + 0.12 * energy)
         gaze_x = cx + self._look_x * gaze_reach
         gaze_y = cy + self._look_y * gaze_reach
+        shake_now = time.time()
+        if shake_now < self._shake_until:
+            shake_mag = max_r * SHAKE_AMPLITUDE * (self._shake_until - shake_now) / SHAKE_DURATION
+            gaze_x += random.uniform(-1.0, 1.0) * shake_mag
+            gaze_y += random.uniform(-1.0, 1.0) * shake_mag
         pulse_speed = 1.4 + energy * 9.0
         pulse = 0.5 + 0.5 * math.sin(t * pulse_speed)
         pulse_amplitude = 0.15 + energy * 0.35
 
         outer_r = max_r
-        if time.time() < self._blink_until:
+        now_t = time.time()
+        if now_t < self._error_blink_until:
+            error_elapsed = ERROR_BLINK_DURATION - (self._error_blink_until - now_t)
+            lit = (error_elapsed * BLINK_HZ) % 1.0 < 0.5
+            outer_color = ERROR_BLINK_COLOR if lit else RING_DIM_COLOR
+            outer_width = 3.0 if lit else 1.0
+        elif time.time() < self._blink_until:
             blink_elapsed = BLINK_DURATION - (self._blink_until - time.time())
             lit = (blink_elapsed * BLINK_HZ) % 1.0 < 0.5
             outer_color = BLINK_COLOR if lit else RING_DIM_COLOR

@@ -58,7 +58,7 @@ EMPTY_CHAT_ART = r"""
 {}@!@@!@!  @!@!@!@! @!@  !@! @!!!:!   @!@!@!@  @!!!:!   {}
 {}!!:      !!:  !!! !!:  !!! !!:      !!:  !!! !!:      {}
 {} :        :   : :  : :. :  : :: ::  :: : ::  : :: ::  {}
-{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{} """
+{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}"""
 ENTRY_PLACEHOLDER = "Say something..."
 
 SETTINGS_FILE = os.path.join(APP_DIR, "settings.json")
@@ -1354,7 +1354,7 @@ class ChatApp:
         self.image_refs.clear()
         self.current_conversation_path = None
         self._show_empty_placeholder()
-        self.visualizer.recenter()
+        self.visualizer.shake()
         self._autosave()
 
     def _has_conversation_messages(self):
@@ -1478,6 +1478,7 @@ class ChatApp:
         threading.Thread(target=self._call_api, daemon=True).start()
 
     def _call_api(self):
+        is_error = False
         try:
             api_key = str(self.config.get("api_key", "")).strip()
             model = str(self.config.get("model", "")).strip()
@@ -1508,6 +1509,7 @@ class ChatApp:
                 print(f"[API ERROR] {resp.status_code}: {error_detail}")
                 log_app_error(f"API error {resp.status_code}: {error_detail}")
                 reply = self.config.get("error_message", "API error, try again later.")
+                is_error = True
             else:
                 data = resp.json()
                 if isinstance(data, dict) and "error" in data and data["error"]:
@@ -1540,16 +1542,19 @@ class ChatApp:
             log_app_error(f"Runtime error: {message}")
             reply = self.config.get("error_message", "Internal error occurred.")
             reasoning_content = ""
+            is_error = True
 
-        self.root.after(0, self._show_reply, reply, reasoning_content)
+        self.root.after(0, self._show_reply, reply, reasoning_content, is_error)
 
-    def _show_reply(self, reply, reasoning=""):
+    def _show_reply(self, reply, reasoning="", is_error=False):
         message_index = len(self.messages) - 1
         self._append_message_content("Phoebe", reply, "assistant", message_index)
         self.visualizer.push_reasoning(reasoning)
+        if is_error:
+            self.visualizer.flash_error()
         self._set_busy(False)
         self._autosave()
-        if self._voice_enabled:
+        if self._voice_enabled and not is_error:
             self._speak_text(self._reply_text_for_speech(reply))
 
     def _reply_text_for_speech(self, reply):
