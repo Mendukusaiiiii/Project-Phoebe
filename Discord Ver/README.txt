@@ -34,7 +34,6 @@ warnings.json - Per-server, per-user warning history (auto-created if missing)
 
 requirements.txt - Python dependencies for Katabump or local hosting
 
-.env - Stores Discord bot token and owner ID (not committed or shared)
 
 SETUP INSTRUCTIONS:
 
