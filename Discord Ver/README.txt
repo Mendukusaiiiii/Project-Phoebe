@@ -1,87 +1,158 @@
-Discord AI Bot
+Phoebe - Discord AI Bot
 
 ABOUT:
-A Python-based Discord bot that integrates with an AI API to provide AI-generated responses.
-Includes a moderation system with warnings, mutes, temporary and permanent bans, spam detection, and a banned word filter.
+A Python Discord bot that responds with AI-generated messages in a configured
+server channel. It also includes moderation and automod tools, per-user
+encrypted conversation memory, and an Amber (𝓐) economy with a shop,
+inventories, and collectible roles.
 
 FEATURES:
 
-User memory
-
-Channel lock and unlock
-
-Native Discord slash commands (appear in the "/" picker with descriptions)
-
-Moderation commands: /warn, /mute, /ban (with optional duration and auto-unban), /warnings (view history)
-
-Automod: spam detection for repeated messages, configurable banned word filter (/filteradd, /filterremove, /filterlist)
-
-Role-based permissions: assign mod/admin bot-command access to roles without needing Discord’s native Administrator or Moderate Members permission (/setmodrole, /removemodrole, /modroles, /setadminrole, /removeadminrole, /adminroles)
-
-Owner-only utility commands: /setup, /unsetup, /test, /stoptest
-
-/say command to make the bot post a message
+- AI chat powered by an OpenAI-compatible chat completions API.
+- Replies to messages in the channel configured with /setup.
+- Per-user conversation memory, encrypted at rest. Use /clearmemory to erase
+  your conversation history.
+- Native Discord slash commands, synced automatically when the bot starts.
+- Moderation: /warn, /mute (Discord timeout, up to 28 days), /ban (temporary
+  or permanent, with automatic unban), and /warnings.
+- Automod: repeated-message spam detection and a per-server word/phrase filter
+  managed with /filteradd, /filterremove, and /filterlist.
+- Role-based bot command access managed with /setmodrole, /removemodrole,
+  /modroles, /setadminrole, /removeadminrole, and /adminroles.
+- Amber economy: earn Amber by chatting, claim it with /daily, check balances,
+  transfer Amber, and spend it in /shop. Use /inventory to view owned items.
+- Shop supports limited-stock items and custom/title roles. Sold-out limited
+  items are automatically moved to the archive and are no longer purchasable.
+- /say posts a message as the bot. The owner-only /test and /stoptest commands
+  start and stop a repeating binary-message test in the current channel.
 
 PROJECT FILES:
 
-bot.py - Main Python script that runs the bot
+- main.py - Main bot script; run this file to start the bot.
+- components/earn.py - Amber chat rewards and /daily command.
+- components/shop.py - Shop, inventory, role purchases, and sold-out item
+  archiving.
+- requirements.txt - Python package dependencies.
+- .env - Local environment variables for the Discord token, owner ID, and
+  memory encryption key. Keep this file private and do not commit real values.
+- data/config.json - AI API settings and bot/server settings.
+- data/filtered_words.json - Per-server banned words and phrases.
+- data/warnings.json - Per-server, per-user warning histories.
+- data/memory.json - Encrypted per-user AI conversation memory.
+- data/balances.json - User Amber balances.
+- data/cooldowns.json - Daily claim cooldowns and streaks.
+- data/shop_items.json - Active shop catalog, including limited-item stock.
+- data/archived_items.json - Sold-out limited items; managed by the bot.
+- data/inventory.json - User-owned shop items, role selections, and stock counts.
 
-config.json - Configuration file (API key, model, settings, active channels, mod/admin roles, scheduled unbans)
+SETUP:
 
-filtered_words.json - Per-server banned word list (auto-created if missing)
+1. Install Python and dependencies
 
-warnings.json - Per-server, per-user warning history (auto-created if missing)
+   From this folder, install the packages:
 
-requirements.txt - Python dependencies for Katabump or local hosting
+       python -m pip install -r requirements.txt
 
-.env - Stores Discord bot token and owner ID (not committed or shared)
+2. Configure data/config.json
 
-SETUP INSTRUCTIONS:
+   Set the following values:
 
-Step 1: Edit config.json
-Update the following fields:
+   - api_key - Your AI provider API key.
+   - api_base - The provider's OpenAI-compatible API base URL. The bot appends
+     /chat/completions.
+   - model - The model name supported by your provider.
+   - system_context - The AI assistant's instructions/personality.
+   - error_message - The message shown when an AI request fails.
 
-api_key: Replace with your OpenRouter API key
+   The bot adds and maintains server settings such as channels, mod_roles,
+   admin_roles, and scheduled_unbans.
 
-system_context: Customize the assistant personality
+3. Configure .env
 
-error_message: Change the fallback message shown on error
+   Add these values to a .env file in this folder, or set them in your hosting
+   provider's environment settings:
 
-Note: channels, mod_roles, admin_roles, and scheduled_unbans are managed automatically by the bot.
+       DISCORD_BOT_TOKEN=<YOUR_BOT_TOKEN>
+       OWNER_ID=<YOUR_DISCORD_USER_ID>
+       MEMORY_ENCRYPTION_KEY=<A_RANDOM_SECRET>
 
-Step 2: Create .env
-Do not put your token directly in bot.py. Create a file named ".env" in the same folder as bot.py and add:
-DISCORD_BOT_TOKEN=<YOUR_BOT_TOKEN>
-OWNER_ID=<YOUR_DISCORD_USER_ID>
+   OWNER_ID is required for owner-only commands. MEMORY_ENCRYPTION_KEY is
+   required to load and save conversation memory. Generate a strong key with:
 
-OWNER_ID is required for owner-only commands and full mod/admin access.
-Ensure requirements.txt includes python-dotenv.
+       python -c "import secrets; print(secrets.token_urlsafe(32))"
 
-Step 3: Sync slash commands
-Commands register automatically on startup (bot.tree.sync runs in on_ready).
-Global sync may take up to an hour; for faster testing, sync to a single server.
+   Keep the same memory key between restarts and back up the key securely.
+   Losing or changing it prevents the bot from decrypting existing memory.
+   Do not put credentials directly in main.py or share your .env file.
 
-Step 4: Permissions
-Moderation commands are available to:
+4. Configure the Discord application
 
-The bot owner (OWNER_ID)
+   Enable the Message Content Intent in the Discord Developer Portal. Invite
+   the bot with the application-command scope and the permissions it needs:
+   view channels, read message history, send messages, manage messages
+   (automod deletion), moderate members, ban members, and manage roles (for
+   shop role features). The bot's role must be high enough to manage the roles
+   it creates or assigns.
 
-Users with native Discord permissions (Administrator or Moderate Members)
+5. Start the bot and sync commands
 
-Roles registered via /setmodrole or /setadminrole
+   Run from this folder so the relative data/ paths resolve correctly:
+
+       python main.py
+
+   Slash commands are synced globally when the bot becomes ready. Global
+   command updates can take time to appear in Discord.
+
+6. Configure an AI chat channel
+
+   In the desired server channel, run /setup as the bot owner. AI replies are
+   only generated for messages in that configured channel. Run /unsetup as
+   the owner to remove the channel configuration.
+
+COMMANDS:
+
+- General: /help, /setup, /unsetup, /say.
+- Moderation: /warn, /mute, /ban, /warnings.
+- Automod filter: /filteradd, /filterremove, /filterlist.
+- Role access: /setmodrole, /removemodrole, /modroles, /setadminrole,
+  /removeadminrole, /adminroles.
+- AI memory: /clearmemory.
+- Economy: /balance, /transfer, /addbalance, /daily, /shop, /inventory.
+- Owner test utility: /test, /stoptest.
+
+PERMISSIONS:
+
+- The bot owner (OWNER_ID) has access to owner-only commands and bypasses the
+  bot's moderator/admin role checks.
+- Moderator commands accept the owner, members with Discord's Moderate Members
+  permission, or members with a role configured using /setmodrole.
+- Admin-role management accepts the owner, members with Discord's Administrator
+  permission, or members with a role configured using /setadminrole. Setting or
+  removing admin roles is restricted to the bot owner.
+- /addbalance, /setup, /unsetup, /test, and /stoptest are owner-only.
+- The bot also needs the corresponding Discord permissions to carry out
+  moderation actions; bot-command access does not grant the bot permissions.
 
 MODERATION NOTES:
 
-/warn and /mute DM the user automatically (fallback if DMs are closed)
+- /warn and /mute attempt to DM the affected user. The command still proceeds
+  if DMs are closed and reports that the DM could not be sent.
+- /mute uses Discord's native timeout and accepts durations such as 10m, 2h,
+  or 3d, with a maximum of 28 days.
+- /ban accepts durations such as 10m, 2h, 3d, or 1w. Leave duration blank for
+  a permanent ban. Scheduled temporary unbans are saved in data/config.json
+  and restored when the bot starts again.
+- Five identical messages in a row within the 60-second spam window in a server
+  channel are deleted and generate a warning. Members with Moderate Members
+  permission are exempt from automod.
+- A message matching a server's filtered word or phrase is deleted and
+  generates a warning. Members with Moderate Members permission are exempt.
 
-/mute uses Discord’s native timeout, maximum 28 days
+PRESENCE:
 
-/ban supports optional durations (10m, 2h, 3d, 1w). Omit for permanent ban. Temporary bans are tracked in config.json and auto-unban even after restarts
+The current status is set in main.py inside on_ready:
 
-Spam detection: 5 identical messages within 60 seconds are auto-deleted and issue a warning. Users with Moderate Members permission are exempt
+    activity=discord.Activity(type=discord.ActivityType.watching, name="YOU")
+    status=discord.Status.idle
 
-Banned word filter: matching messages are auto-deleted and issue a warning. Users with Moderate Members permission are exempt
-
-STATUS (inside on_ready in bot.py):
-status = discord.Status.idle   # Options: online, idle, dnd, invisible
-activity = discord.Activity(type=discord.ActivityType.watching, name="<YOUR_STATUS_MESSAGE>")
+Discord status options include online, idle, dnd, and invisible.
