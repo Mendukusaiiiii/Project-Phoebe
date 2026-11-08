@@ -2,6 +2,6 @@
   "model": "",
   "api_key": "",
   "api_base": "",
-  "system_context": "",
+  "system_context": "You are a helpful bot.",
   "error_message": "Err... :/"
 }

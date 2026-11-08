@@ -1,0 +1,24 @@
+[
+    {
+        "id": "title_test_item",
+        "name": "Test Item",
+        "emoji": "🫖",
+        "price": 100,
+        "type": "title",
+        "title": "Test Item",
+        "color": "#1ABC9C",
+        "description": "**Test Item** role you can wear in the server."
+    }, 
+    {
+        "id": "title_limited_item",
+        "name": "Limited Role",
+        "emoji": "💎",
+        "price": 10000,
+        "type": "title",
+        "title": "Limited Role",
+        "color": "#FFBF00",
+        "description": "**Limited Role** role you can wear in the server.",
+        "category": "limited",
+        "stock": 3
+    }
+]

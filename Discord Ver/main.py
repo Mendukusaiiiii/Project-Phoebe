@@ -4,6 +4,11 @@ import asyncio
 import json
 import re
 import datetime
+import base64
+import hashlib
+import hmac
+import secrets
+import zlib
 
 import discord
 from discord import app_commands
@@ -11,9 +16,17 @@ from discord.ext import commands
 import aiohttp
 from dotenv import load_dotenv
 
-CONFIG_FILE = "config.json"
-FILTER_FILE = "filtered_words.json"
-WARNINGS_FILE = "warnings.json"
+from components import earn, shop
+
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+FILTER_FILE = os.path.join(DATA_DIR, "filtered_words.json")
+WARNINGS_FILE = os.path.join(DATA_DIR, "warnings.json")
+BALANCES_FILE = os.path.join(DATA_DIR, "balances.json")
+COOLDOWNS_FILE = os.path.join(DATA_DIR, "cooldowns.json")
+MEMORY_FILE = os.path.join(DATA_DIR, "memory.json")
 
 
 def load_config():
@@ -54,8 +67,156 @@ def save_warnings(data):
         json.dump(data, f, indent=4)
 
 
+def load_balances():
+    if not os.path.exists(BALANCES_FILE):
+        with open(BALANCES_FILE, "w") as f:
+            json.dump({}, f, indent=4)
+        return {}
+    with open(BALANCES_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_balances(data):
+    with open(BALANCES_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+
+def load_cooldowns():
+    if not os.path.exists(COOLDOWNS_FILE):
+        with open(COOLDOWNS_FILE, "w") as f:
+            json.dump({}, f, indent=4)
+        return {}
+    with open(COOLDOWNS_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_cooldowns(data):
+    with open(COOLDOWNS_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+
+_keys = None
+
+
+def get_keys():
+    """Derive (encryption_key, mac_key) from MEMORY_ENCRYPTION_KEY. Cached after first use."""
+    global _keys
+    if _keys is None:
+        passphrase = os.environ.get("MEMORY_ENCRYPTION_KEY")
+        if not passphrase:
+            raise RuntimeError(
+                "MEMORY_ENCRYPTION_KEY environment variable is not set. Generate one with:\n"
+                "  python -c \"import secrets; print(secrets.token_urlsafe(32))\"\n"
+                "and add it to your .env / hosting environment variables as MEMORY_ENCRYPTION_KEY"
+            )
+        material = hashlib.pbkdf2_hmac(
+            "sha256", passphrase.strip().encode("utf-8"),
+            b"discord-bot-memory-v1", 200_000, dklen=64,
+        )
+        _keys = (material[:32], material[32:])
+    return _keys
+
+
+def _xor_keystream(enc_key: bytes, nonce: bytes, data: bytes) -> bytes:
+    """XOR data with an HMAC-SHA256 counter-mode keystream (same call encrypts and decrypts)."""
+    blocks = (len(data) + 31) // 32
+    stream = b"".join(
+        hmac.new(enc_key, nonce + i.to_bytes(8, "big"), hashlib.sha256).digest()
+        for i in range(blocks)
+    )[:len(data)]
+    return (int.from_bytes(data, "big") ^ int.from_bytes(stream, "big")).to_bytes(len(data), "big")
+
+
+def encrypt_messages(messages: list) -> str:
+    """One user's whole conversation -> a single compressed, encrypted, authenticated string."""
+    enc_key, mac_key = get_keys()
+    plain = zlib.compress(json.dumps(messages, ensure_ascii=False).encode("utf-8"), 9)
+    nonce = secrets.token_bytes(16)  # fresh every save, so the keystream is never reused
+    cipher = _xor_keystream(enc_key, nonce, plain)
+    tag = hmac.new(mac_key, nonce + cipher, hashlib.sha256).digest()
+    return base64.b64encode(nonce + cipher + tag).decode("ascii")
+
+
+def decrypt_messages(blob: str) -> list:
+    """Reverse of encrypt_messages. Raises ValueError on a wrong key or tampered data."""
+    enc_key, mac_key = get_keys()
+    try:
+        raw = base64.b64decode(blob.encode("ascii"), validate=True)
+        if len(raw) < 48:
+            raise ValueError("data too short")
+        nonce, cipher, tag = raw[:16], raw[16:-32], raw[-32:]
+        expected = hmac.new(mac_key, nonce + cipher, hashlib.sha256).digest()
+        if not hmac.compare_digest(tag, expected):
+            raise ValueError("authentication failed")
+        plain = zlib.decompress(_xor_keystream(enc_key, nonce, cipher))
+        return json.loads(plain.decode("utf-8"))
+    except Exception as e:
+        raise ValueError(str(e))
+
+
+def load_memory():
+    """Load memory.json and decrypt each user's conversation.
+
+    Each user's value is one encrypted string. Old plaintext lists from the
+    previous version are accepted and re-saved encrypted.
+    """
+    get_keys()  # fail fast if the key is missing
+
+    if not os.path.exists(MEMORY_FILE):
+        with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f, indent=4)
+        return {}
+
+    try:
+        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except json.JSONDecodeError:
+        print("[MEMORY] memory.json is corrupted, starting with empty memory.")
+        return {}
+
+    memory = {}
+    migrated = False
+    for user_id, value in raw.items():
+        if isinstance(value, str):
+            try:
+                memory[user_id] = decrypt_messages(value)
+            except ValueError:
+                # Don't continue: the next save would overwrite the file and
+                # permanently destroy messages we simply couldn't decrypt.
+                raise RuntimeError(
+                    f"Could not decrypt memory.json (user {user_id}) - MEMORY_ENCRYPTION_KEY "
+                    "doesn't match the key it was encrypted with, or the data was modified."
+                )
+        elif isinstance(value, list):
+            if any("content_enc" in m for m in value):
+                raise RuntimeError(
+                    "memory.json is in the old per-message encrypted format, which this "
+                    "version can't read. Delete it or restore the plaintext version."
+                )
+            memory[user_id] = value  # legacy plaintext
+            migrated = True
+
+    if migrated:
+        print("[MIGRATION] Encrypting existing plaintext messages in memory.json.")
+        save_memory(memory)
+    return memory
+
+
+def save_memory(data):
+    """Encrypt each user's whole conversation as one string and write memory.json atomically."""
+    encrypted = {user_id: encrypt_messages(msgs) for user_id, msgs in data.items()}
+    # Write to a temp file first, then swap it in, so a crash mid-write
+    # can't leave memory.json half-written.
+    tmp_path = MEMORY_FILE + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(encrypted, f, indent=4)
+    os.replace(tmp_path, MEMORY_FILE)
+
+
 config = load_config()
 filter_words = load_filter_words()
+balances_data = load_balances()
+cooldowns_data = load_cooldowns()
 
 
 load_dotenv()
@@ -87,7 +248,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="/", intents=intents, help_command=None)
 
-user_memory = {}
+user_memory = load_memory()
 active_channels = config.setdefault("channels", {})
 binary_tasks = {}
 
@@ -166,6 +327,38 @@ def format_duration(seconds: int | None) -> str:
     return "for " + " ".join(parts) if parts else "briefly"
 
 
+CURRENCY_SYMBOL = "𝓐"
+MAX_AMOUNT = 1_000_000_000
+
+
+def get_balance(user_id: int) -> int:
+    return balances_data.get(str(user_id), 0)
+
+
+def format_currency(amount: int) -> str:
+    return f"{amount:,} {CURRENCY_SYMBOL}"
+
+
+economy_helpers = dict(
+    balances_data=balances_data,
+    get_balance=get_balance,
+    save_balances=save_balances,
+    format_currency=format_currency,
+    cooldowns_data=cooldowns_data,
+    save_cooldowns=save_cooldowns,
+)
+earn.register(bot, text_allowed=lambda guild_id, text: is_text_allowed(guild_id, text), **economy_helpers)
+shop.register(
+    bot,
+    balances_data=balances_data,
+    get_balance=get_balance,
+    save_balances=save_balances,
+    format_currency=format_currency,
+    symbol=CURRENCY_SYMBOL,
+    name_allowed=lambda guild_id, text: is_text_allowed(guild_id, text),
+)
+
+
 def _remove_scheduled_unban(guild_id: int, user_id: int):
     scheduled_unbans[:] = [
         e for e in scheduled_unbans
@@ -215,6 +408,12 @@ def get_banned_word_pattern(guild_id: str):
         _banned_word_pattern_cache[guild_id] = (list(words), pattern)
         return pattern
     return cached[1]
+
+
+def is_text_allowed(guild_id: int, text: str) -> bool:
+    """False if `text` contains a word from the server's filter list."""
+    pattern = get_banned_word_pattern(str(guild_id))
+    return pattern is None or not pattern.search(text)
 
 
 
@@ -665,11 +864,17 @@ async def warnings_cmd(interaction: discord.Interaction, user: discord.Member):
 @bot.tree.command(name="help", description="Help me!")
 async def custom_help(interaction: discord.Interaction):
     help_text = (
-        "Bot CMDS:\n"
+        "Phoebe's CMDS:\n"
         "\n"
         "`/help`        - show help message\n"
         "`/clearmemory` - clears AI memory\n"
-
+        "`/balance`     - check your Amber balance\n"
+        "`/transfer`    - send Amber to another user\n"
+        "`/daily`       - claim your daily Amber\n"
+        "`/shop`        - spend your Amber\n"
+        "`/inventory`   - see the items you own\n"
+        "\n"
+        "**Earn Amber (𝓐) by chatting.**\n"
     )
     await interaction.response.send_message(help_text)
 
@@ -679,21 +884,92 @@ async def custom_help(interaction: discord.Interaction):
 @app_commands.default_permissions(moderate_members=True)
 @has_mod_role()
 async def say(interaction: discord.Interaction, message: str):
-    await interaction.channel.send(message)
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        await interaction.channel.send(message)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "I don't have permission to send messages in this channel.", ephemeral=True
+        )
+        return
+    except discord.HTTPException as e:
+        await interaction.followup.send(f"Failed to send the message: {e}", ephemeral=True)
+        return
+
     preview = message if len(message) <= 200 else message[:200] + "..."
-    confirmation = f"Sent:\n> {preview}"
+    await interaction.followup.send(f"Sent:\n> {preview}", ephemeral=True)
 
-    sent_message = None
 
-    if sent_message is not None:
-        async def _auto_delete(msg):
-            await asyncio.sleep(5)
-            try:
-                await msg.delete()
-            except discord.HTTPException:
-                pass
+    await asyncio.sleep(5)
+    try:
+        await interaction.delete_original_response()
+    except discord.HTTPException:
+        pass
 
-        asyncio.create_task(_auto_delete(sent_message))
+
+@bot.tree.command(name="balance", description="Check your Amber balance (or someone else's)")
+@app_commands.describe(user="The user to check (defaults to you)")
+async def balance(interaction: discord.Interaction, user: discord.User | None = None):
+    target = user or interaction.user
+    amount = get_balance(target.id)
+    if target.id == interaction.user.id:
+        await interaction.response.send_message(f"You have **{format_currency(amount)}**.")
+    else:
+        await interaction.response.send_message(f"{target.mention} has **{format_currency(amount)}**.")
+
+
+@bot.tree.command(name="transfer", description="Send some of your Amber to another user")
+@app_commands.describe(user="Who to send Amber to", amount="How much Amber to send")
+async def transfer(
+    interaction: discord.Interaction,
+    user: discord.User,
+    amount: app_commands.Range[int, 1, MAX_AMOUNT],
+):
+    if user.bot:
+        await interaction.response.send_message("You can't send Amber to a bot.", ephemeral=True)
+        return
+    if user.id == interaction.user.id:
+        await interaction.response.send_message("You can't send Amber to yourself.", ephemeral=True)
+        return
+
+    sender_id = str(interaction.user.id)
+    receiver_id = str(user.id)
+
+    if get_balance(interaction.user.id) < amount:
+        await interaction.response.send_message(
+            f"You don't have enough Amber. Your balance is **{format_currency(get_balance(interaction.user.id))}**.",
+            ephemeral=True,
+        )
+        return
+
+    balances_data[sender_id] = get_balance(interaction.user.id) - amount
+    balances_data[receiver_id] = get_balance(user.id) + amount
+    save_balances(balances_data)
+
+    await interaction.response.send_message(
+        f"{interaction.user.mention} sent **{format_currency(amount)}** to {user.mention}."
+    )
+
+
+@bot.tree.command(name="addbalance", description="Add Amber to a user's balance.")
+@app_commands.describe(user="Who to give Amber to:", amount="How much Amber to add?")
+@app_commands.default_permissions(administrator=True)
+@is_owner()
+async def addbalance(
+    interaction: discord.Interaction,
+    user: discord.User,
+    amount: app_commands.Range[int, 1, MAX_AMOUNT],
+):
+    key = str(user.id)
+    balances_data[key] = get_balance(user.id) + amount
+    save_balances(balances_data)
+
+    await interaction.response.send_message(
+        f"Added **{format_currency(amount)}** to {user.mention}. "
+        f"New balance: **{format_currency(balances_data[key])}**.",
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="clearmemory", description="Clear your conversation memory")
@@ -701,6 +977,7 @@ async def clear_memory(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
     if user_id in user_memory:
         del user_memory[user_id]
+        save_memory(user_memory)
     await interaction.response.send_message("Your memory has been cleared!")
 
 
@@ -763,6 +1040,7 @@ async def stop_binary(interaction: discord.Interaction):
 @filterlist.error
 @warnings_cmd.error
 @say.error
+@addbalance.error
 async def owner_only_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CheckFailure):
         await interaction.response.send_message(
@@ -839,6 +1117,7 @@ async def on_message(message):
     user_id = str(message.author.id)
     user_memory.setdefault(user_id, [])
     user_memory[user_id].append({"role": "user", "content": message.content})
+    save_memory(user_memory)
 
     messages = [{"role": "system", "content": config["system_context"]}] + user_memory[user_id]
 
@@ -861,6 +1140,7 @@ async def on_message(message):
                 response = await resp.json()
                 reply = response["choices"][0]["message"]["content"]
                 user_memory[user_id].append({"role": "assistant", "content": reply})
+                save_memory(user_memory)
                 await message.reply(reply)
     except Exception as e:
         await message.reply(config.get("error_message", "Internal error occurred."))
