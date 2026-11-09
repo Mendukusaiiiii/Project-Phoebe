@@ -20,18 +20,18 @@ CUSTOM_ROLE_NAME_MAX = 32
 DEFAULT_CUSTOM_COLOR = 0xFFBF00
 
 SHOP_ITEMS_FILE = os.path.join(DATA_DIR, "shop_items.json")
-ARCHIVE_FILE = os.path.join(DATA_DIR, "archived_items.json")  # sold-out limited items
+ARCHIVE_FILE = os.path.join(DATA_DIR, "archived_items.json") 
 
 DEFAULT_SHOP_ITEMS = []
 
-# Shop categories: key -> (display name, emoji)
+
 CATEGORIES = {
-    "costume": ("Costume Role", "🎭"),
+    "custom": ("Custom Role", "🎭"),
     "general": ("General Items", "🛍️"),
     "limited": ("Limited Items", "⏳"),
 }
-DEFAULT_CATEGORY = "general"  # the tab /shop opens on
-STOCK_KEY = "_stock_sold"  # inventory.json: {item_id: number sold}
+DEFAULT_CATEGORY = "general"  
+STOCK_KEY = "_stock_sold"  
 
 CUSTOM_ROLE_ITEM = {
     "id": "custom_role",
@@ -39,7 +39,7 @@ CUSTOM_ROLE_ITEM = {
     "emoji": "🎨",
     "price": 1_000,
     "type": "custom_role",
-    "category": "costume",
+    "category": "custom",
     "description": "Design your own role.",
 }
 
@@ -56,7 +56,7 @@ def _write_json(path: str, data) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
-    os.replace(tmp, path)  # atomic: the file is either the old or the new version
+    os.replace(tmp, path) 
 
 
 def _normalize_item(raw: dict) -> dict:
@@ -67,14 +67,11 @@ def _normalize_item(raw: dict) -> dict:
     item["color"] = color
     item.setdefault("type", "title")
     item.setdefault("title", item["name"])
-    # Category: an explicit "category" wins. Otherwise anything with a "stock"
-    # number is a limited item, the custom role is the costume role, and the
-    # rest (title roles) are general items.
     if item.get("category") not in CATEGORIES:
         if item.get("stock") is not None:
             item["category"] = "limited"
         elif item["type"] == "custom_role":
-            item["category"] = "costume"
+            item["category"] = "custom"
         else:
             item["category"] = "general"
     return item
@@ -90,7 +87,6 @@ def load_shop_items() -> list[dict]:
 def load_archived_items(active_ids: set) -> list[dict]:
     """Sold-out items. Not shown in the shop, but owners can still equip them."""
     raw_items = _read_json_list(ARCHIVE_FILE)
-    # If an item was moved back into shop_items.json (restocked), it's no longer archived.
     kept = [r for r in raw_items if r.get("id") not in active_ids]
     if len(kept) != len(raw_items) or not os.path.exists(ARCHIVE_FILE):
         _write_json(ARCHIVE_FILE, kept)
@@ -103,7 +99,6 @@ ITEMS_BY_ID = {item["id"]: item for item in SHOP_ITEMS + ARCHIVED_ITEMS}
 
 
 def _all_items() -> list[dict]:
-    """Shop items plus archived ones (for owner-side features like equip/inventory)."""
     return SHOP_ITEMS + ARCHIVED_ITEMS
 
 
@@ -129,7 +124,6 @@ inventory_data = load_inventory()
 
 
 def _stock_left(item: dict) -> int | None:
-    """Units left for a limited item, or None if the item has unlimited stock."""
     total = item.get("stock")
     if total is None:
         return None
@@ -143,7 +137,6 @@ def _change_sold(item_id: str, delta: int):
 
 
 def _archive_item(item: dict) -> None:
-    """Move a sold-out item from shop_items.json to archived_items.json."""
     if item not in SHOP_ITEMS:
         return
     SHOP_ITEMS.remove(item)
@@ -157,7 +150,6 @@ def _archive_item(item: dict) -> None:
     entry = dict(entry)
     entry["archived_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    # Write the archive first so a crash can never lose the item.
     archived_raw = [r for r in _read_json_list(ARCHIVE_FILE) if r.get("id") != item["id"]]
     archived_raw.append(entry)
     _write_json(ARCHIVE_FILE, archived_raw)
@@ -170,11 +162,10 @@ def _archive_sold_out() -> None:
             _archive_item(item)
 
 
-_archive_sold_out()  # on startup, archive anything that is already sold out
+_archive_sold_out()  
 
 
 def _item_status(user: discord.abc.User, item: dict) -> str | None:
-    """'equipped', 'owned' or None for a title role, as seen by this user."""
     if item["type"] != "title":
         return None
     guild = getattr(user, "guild", None)
@@ -207,7 +198,7 @@ def _build_embed(user: discord.abc.User, category: str = DEFAULT_CATEGORY) -> di
         ),
         color=EMBED_COLOR,
     )
-    category_items = _items_in_category(category)[:25]  # Discord allows 25 fields/options max
+    category_items = _items_in_category(category)[:25]  
     if not category_items:
         embed.add_field(name="Nothing here yet", value="Check back later!", inline=False)
     for item in category_items:
@@ -270,7 +261,6 @@ _purchase_locks: dict[int, asyncio.Lock] = {}
 
 
 async def _purchase(interaction: discord.Interaction, item: dict) -> str:
-    # One purchase at a time per user, so a double-click can't buy twice.
     lock = _purchase_locks.setdefault(interaction.user.id, asyncio.Lock())
     async with lock:
         return await _purchase_unlocked(interaction, item)
@@ -315,7 +305,6 @@ async def _purchase_unlocked(interaction: discord.Interaction, item: dict) -> st
             f"but you only have **{_eco.format_currency(balance)}**."
         )
 
-    # Reserve the unit before any await so two buyers can't take the last one.
     if limited:
         _change_sold(item["id"], +1)
 
@@ -398,8 +387,6 @@ async def _apply_custom_role(interaction: discord.Interaction, item: dict,
     else:
         color = record["color"] if record else DEFAULT_CUSTOM_COLOR
 
-    # You pay for a new role, or when the name is changed. Color-only changes and
-    # putting your role back on are free.
     name_changed = record is None or name != record["name"]
     if not name_changed and own_role is not None and own_role in user.roles and color == record["color"]:
         return "Nothing changed, so you weren't charged."
@@ -606,7 +593,7 @@ class ItemSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        view = self.view  # rebuild_select() removes this select, which clears self.view
+        view = self.view 
         item = ITEMS_BY_ID[self.values[0]]
         if item["type"] == "custom_role":
             await _open_custom_role(interaction, item, view)
@@ -655,7 +642,6 @@ class ShopView(discord.ui.View):
         self.rebuild_select()
 
     def rebuild_select(self):
-        """Rebuild the item dropdown for the current category (also refreshes stock)."""
         if self.item_select is not None:
             self.remove_item(self.item_select)
         self.item_select = ItemSelect(self.category, self.user)
@@ -764,7 +750,7 @@ def _build_inventory_embed(user: discord.abc.User) -> discord.Embed:
         role_text = role.mention if role is not None else f"**{custom_record['name']}**"
         status = " *(equipped)*" if role is not None and role.id in worn_role_ids else ""
         embed.add_field(
-            name=f"{CATEGORIES['costume'][1]} {CATEGORIES['costume'][0]}:",
+            name=f"{CATEGORIES['custom'][1]} {CATEGORIES['custom'][0]}:",
             value=f"🎨 {role_text} (`#{custom_record['color']:06X}`){status}",
             inline=False,
         )
