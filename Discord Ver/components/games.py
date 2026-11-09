@@ -80,6 +80,9 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
              cooldowns_data, save_cooldowns, **_ignored):
     active: set[int] = set()
 
+    for _name in ("coinflip", "rps", "blackjack", "guess", "hangman"):
+        bot.tree.remove_command(_name)
+
     def credit(uid: int, amount: int):
         if amount:
             balances_data[str(uid)] = get_balance(uid) + amount
