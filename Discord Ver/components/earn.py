@@ -4,13 +4,13 @@ import discord
 
 
 DAILY_COOLDOWN = 24 * 3600
-DAILY_STREAK_WINDOW = 48 * 3600   
+DAILY_STREAK_WINDOW = 48 * 3600 
 DAILY_BASE = 100
-DAILY_STREAK_BONUS = 20          
-DAILY_MAX_BONUS_DAYS = 10     
+DAILY_STREAK_BONUS = 20         
+DAILY_MAX_BONUS_DAYS = 10        
 MESSAGE_REWARD_MIN, MESSAGE_REWARD_MAX = 1, 5
-MESSAGE_COOLDOWN = 60   
-MESSAGE_MIN_LENGTH = 3      
+MESSAGE_COOLDOWN = 60       
+MESSAGE_MIN_LENGTH = 3    
 
 
 def register(bot, *, balances_data, get_balance, save_balances, format_currency,

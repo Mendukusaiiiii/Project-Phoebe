@@ -16,7 +16,7 @@ from discord.ext import commands
 import aiohttp
 from dotenv import load_dotenv
 
-from components import earn, shop
+from components import earn, shop, games
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -99,7 +99,6 @@ _keys = None
 
 
 def get_keys():
-    """Derive (encryption_key, mac_key) from MEMORY_ENCRYPTION_KEY. Cached after first use."""
     global _keys
     if _keys is None:
         passphrase = os.environ.get("MEMORY_ENCRYPTION_KEY")
@@ -118,7 +117,6 @@ def get_keys():
 
 
 def _xor_keystream(enc_key: bytes, nonce: bytes, data: bytes) -> bytes:
-    """XOR data with an HMAC-SHA256 counter-mode keystream (same call encrypts and decrypts)."""
     blocks = (len(data) + 31) // 32
     stream = b"".join(
         hmac.new(enc_key, nonce + i.to_bytes(8, "big"), hashlib.sha256).digest()
@@ -128,7 +126,6 @@ def _xor_keystream(enc_key: bytes, nonce: bytes, data: bytes) -> bytes:
 
 
 def encrypt_messages(messages: list) -> str:
-    """One user's whole conversation -> a single compressed, encrypted, authenticated string."""
     enc_key, mac_key = get_keys()
     plain = zlib.compress(json.dumps(messages, ensure_ascii=False).encode("utf-8"), 9)
     nonce = secrets.token_bytes(16)  # fresh every save, so the keystream is never reused
@@ -138,7 +135,6 @@ def encrypt_messages(messages: list) -> str:
 
 
 def decrypt_messages(blob: str) -> list:
-    """Reverse of encrypt_messages. Raises ValueError on a wrong key or tampered data."""
     enc_key, mac_key = get_keys()
     try:
         raw = base64.b64decode(blob.encode("ascii"), validate=True)
@@ -155,11 +151,7 @@ def decrypt_messages(blob: str) -> list:
 
 
 def load_memory():
-    """Load memory.json and decrypt each user's conversation.
 
-    Each user's value is one encrypted string. Old plaintext lists from the
-    previous version are accepted and re-saved encrypted.
-    """
     get_keys()  # fail fast if the key is missing
 
     if not os.path.exists(MEMORY_FILE):
@@ -203,7 +195,6 @@ def load_memory():
 
 
 def save_memory(data):
-    """Encrypt each user's whole conversation as one string and write memory.json atomically."""
     encrypted = {user_id: encrypt_messages(msgs) for user_id, msgs in data.items()}
     # Write to a temp file first, then swap it in, so a crash mid-write
     # can't leave memory.json half-written.
@@ -251,6 +242,7 @@ bot = commands.Bot(command_prefix="/", intents=intents, help_command=None)
 user_memory = load_memory()
 active_channels = config.setdefault("channels", {})
 binary_tasks = {}
+MAX_MEMORY_MESSAGES = 40
 
 mod_roles = config.setdefault("mod_roles", {})   
 admin_roles = config.setdefault("admin_roles", {}) 
@@ -357,6 +349,7 @@ shop.register(
     symbol=CURRENCY_SYMBOL,
     name_allowed=lambda guild_id, text: is_text_allowed(guild_id, text),
 )
+games.register(bot, **economy_helpers)
 
 
 def _remove_scheduled_unban(guild_id: int, user_id: int):
@@ -411,7 +404,6 @@ def get_banned_word_pattern(guild_id: str):
 
 
 def is_text_allowed(guild_id: int, text: str) -> bool:
-    """False if `text` contains a word from the server's filter list."""
     pattern = get_banned_word_pattern(str(guild_id))
     return pattern is None or not pattern.search(text)
 
@@ -864,7 +856,7 @@ async def warnings_cmd(interaction: discord.Interaction, user: discord.Member):
 @bot.tree.command(name="help", description="Help me!")
 async def custom_help(interaction: discord.Interaction):
     help_text = (
-        "Phoebe's CMDS:\n"
+        "Phoebe CMDS:\n"
         "\n"
         "`/help`        - show help message\n"
         "`/clearmemory` - clears AI memory\n"
@@ -873,8 +865,14 @@ async def custom_help(interaction: discord.Interaction):
         "`/daily`       - claim your daily Amber\n"
         "`/shop`        - spend your Amber\n"
         "`/inventory`   - see the items you own\n"
+        "`/coinflip`    - bet Amber on a coin flip\n"
+        "`/rps`         - rock paper scissors :D\n"
+        "`/blackjack`   - play blackjack against her\n"
+        "`/guess`       - guess the number for free Amber\n"
+        "`/hangman`     - guess the word for free Amber\n"
         "\n"
         "**Earn Amber (𝓐) by chatting.**\n"
+        "**You can also earn by playing games!**\n"
     )
     await interaction.response.send_message(help_text)
 
@@ -1119,6 +1117,7 @@ async def on_message(message):
     user_memory[user_id].append({"role": "user", "content": message.content})
     save_memory(user_memory)
 
+    user_memory[user_id] = user_memory[user_id][-MAX_MEMORY_MESSAGES:]  # cap history sent to the API
     messages = [{"role": "system", "content": config["system_context"]}] + user_memory[user_id]
 
     try:

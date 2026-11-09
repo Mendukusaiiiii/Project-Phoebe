@@ -85,7 +85,6 @@ def load_shop_items() -> list[dict]:
 
 
 def load_archived_items(active_ids: set) -> list[dict]:
-    """Sold-out items. Not shown in the shop, but owners can still equip them."""
     raw_items = _read_json_list(ARCHIVE_FILE)
     kept = [r for r in raw_items if r.get("id") not in active_ids]
     if len(kept) != len(raw_items) or not os.path.exists(ARCHIVE_FILE):
