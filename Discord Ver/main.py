@@ -17,6 +17,7 @@ import aiohttp
 from dotenv import load_dotenv
 
 from components import earn, shop, games
+print("earn loaded from:", earn.__file__)
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -128,7 +129,7 @@ def _xor_keystream(enc_key: bytes, nonce: bytes, data: bytes) -> bytes:
 def encrypt_messages(messages: list) -> str:
     enc_key, mac_key = get_keys()
     plain = zlib.compress(json.dumps(messages, ensure_ascii=False).encode("utf-8"), 9)
-    nonce = secrets.token_bytes(16)  # fresh every save, so the keystream is never reused
+    nonce = secrets.token_bytes(16)
     cipher = _xor_keystream(enc_key, nonce, plain)
     tag = hmac.new(mac_key, nonce + cipher, hashlib.sha256).digest()
     return base64.b64encode(nonce + cipher + tag).decode("ascii")
@@ -152,7 +153,7 @@ def decrypt_messages(blob: str) -> list:
 
 def load_memory():
 
-    get_keys()  # fail fast if the key is missing
+    get_keys()  
 
     if not os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, "w", encoding="utf-8") as f:
@@ -173,8 +174,7 @@ def load_memory():
             try:
                 memory[user_id] = decrypt_messages(value)
             except ValueError:
-                # Don't continue: the next save would overwrite the file and
-                # permanently destroy messages we simply couldn't decrypt.
+             
                 raise RuntimeError(
                     f"Could not decrypt memory.json (user {user_id}) - MEMORY_ENCRYPTION_KEY "
                     "doesn't match the key it was encrypted with, or the data was modified."
@@ -196,8 +196,6 @@ def load_memory():
 
 def save_memory(data):
     encrypted = {user_id: encrypt_messages(msgs) for user_id, msgs in data.items()}
-    # Write to a temp file first, then swap it in, so a crash mid-write
-    # can't leave memory.json half-written.
     tmp_path = MEMORY_FILE + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(encrypted, f, indent=4)
@@ -516,7 +514,7 @@ async def on_ready():
 
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash command(s).")
+        print(f"Synced {len(synced)} slash command(s): " + ", ".join(sorted(c.name for c in synced)))
     except Exception as e:
         print(f"[SYNC ERROR] {e}")
 
@@ -532,7 +530,6 @@ async def on_ready():
         else:
             asyncio.create_task(schedule_unban(entry["guild_id"], entry["user_id"], delay))
 
-    # Start the console listener task once, on first ready.
     if not getattr(bot, "_console_listener_started", False):
         bot._console_listener_started = True
         bot.loop.create_task(console_listener())
