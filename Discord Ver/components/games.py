@@ -15,9 +15,9 @@ GUESS_BASE_REWARD = 40
 
 HANGMAN_COOLDOWN = 30 * 60
 HANGMAN_MAX_MISTAKES = 6
-HANGMAN_PER_LETTER = 10       
-HANGMAN_PER_LIFE = 15        
-WORDS_FILE = Path("data") / "words.json"   
+HANGMAN_PER_LETTER = 10
+HANGMAN_PER_LIFE = 15
+WORDS_FILE = Path("data") / "words.json"
 
 SUITS = "♠♥♦♣"
 RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
@@ -145,7 +145,58 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
             for child in self.children:
                 child.disabled = True
 
- 
+    class ReplayView(OwnedView):
+
+
+        def __init__(self, uid: int, launcher):
+            super().__init__(timeout=60)
+            self.uid = uid
+            self.launcher = launcher 
+            self.message = None
+
+        @discord.ui.button(label="Play again", emoji="🔁", style=discord.ButtonStyle.success)
+        async def again(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if await self.launcher(interaction):
+                self.stop()
+
+        @discord.ui.button(label="End", emoji="🛑", style=discord.ButtonStyle.danger)
+        async def end(self, interaction: discord.Interaction, button: discord.ui.Button):
+            self.stop()
+            await interaction.response.edit_message(view=None)
+
+        async def on_timeout(self):
+            if self.message:
+                try:
+                    await self.message.edit(view=None)
+                except discord.HTTPException:
+                    pass
+
+    async def respond(interaction: discord.Interaction, edit: bool, **kwargs):
+
+        if edit:
+            await interaction.response.edit_message(**kwargs)
+            return interaction.message
+        await interaction.response.send_message(**kwargs)
+        return await interaction.original_response()
+
+    # ---------------------------------------------------------------- coinflip
+    async def run_coinflip(interaction: discord.Interaction, bet: int, side: str, edit: bool = False) -> bool:
+        if not await start_bet(interaction, bet):
+            return False
+        uid = interaction.user.id
+        result = random.choice(["heads", "tails"])
+        won = result == side
+        payout = bet * 2 if won else 0
+        credit(uid, payout)
+        view = ReplayView(uid, lambda i: run_coinflip(i, bet, side, True))
+        view.message = await respond(
+            interaction, edit,
+            content=(f"🪙 The coin landed on **{result}**. "
+                     f"{'You win!' if won else 'You lose.'} {net_text(bet, payout)}\n"
+                     f"Balance: {format_currency(get_balance(uid))}"),
+            view=view)
+        return True
+
     @bot.tree.command(name="coinflip", description="Bet Amber on a coin flip (double or nothing)")
     @app_commands.describe(bet="How much Amber to bet", side="Heads or tails?")
     @app_commands.choices(side=[
@@ -155,18 +206,9 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
     async def coinflip(interaction: discord.Interaction,
                        bet: app_commands.Range[int, 1, MAX_BET],
                        side: app_commands.Choice[str]):
-        if not await start_bet(interaction, bet):
-            return
-        result = random.choice(["heads", "tails"])
-        won = result == side.value
-        payout = bet * 2 if won else 0
-        credit(interaction.user.id, payout)
-        await interaction.response.send_message(
-            f"🪙 The coin landed on **{result}**. "
-            f"{'You win!' if won else 'You lose.'} {net_text(bet, payout)}\n"
-            f"Balance: {format_currency(get_balance(interaction.user.id))}"
-        )
+        await run_coinflip(interaction, bet, side.value)
 
+    # --------------------------------------------------------------------- rps
     class RPSView(OwnedView):
         def __init__(self, uid: int, bet: int):
             super().__init__(timeout=30)
@@ -182,13 +224,15 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
                 payout, text = 0, "You lose."
             credit(self.uid, payout)
             active.discard(self.uid)
-            self.lock()
             self.stop()
+            bet = self.bet
+            replay = ReplayView(self.uid, lambda i: run_rps(i, bet, True))
             await interaction.response.edit_message(content=(
                 f"You: {RPS_EMOJI[choice]} **{choice}**  vs  Phoebe: {RPS_EMOJI[bot_choice]} **{bot_choice}**\n"
                 f"{text} {net_text(self.bet, payout)}\n"
                 f"Balance: {format_currency(get_balance(self.uid))}"
-            ), view=self)
+            ), view=replay)
+            replay.message = interaction.message
 
         @discord.ui.button(label="Rock", emoji="🪨", style=discord.ButtonStyle.secondary)
         async def rock(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -207,21 +251,25 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
             self.lock()
             if self.message:
                 try:
-                    await self.message.edit(content="⏰ Timed out - bet forfeited.", view=self)
+                    await self.message.edit(content="⏰ Timed out - bet forfeited.", view=None)
                 except discord.HTTPException:
                     pass
+
+    async def run_rps(interaction: discord.Interaction, bet: int, edit: bool = False) -> bool:
+        if not await start_bet(interaction, bet):
+            return False
+        active.add(interaction.user.id)
+        view = RPSView(interaction.user.id, bet)
+        view.message = await respond(
+            interaction, edit, content=f"Betting **{format_currency(bet)}**. Pick your move:", view=view)
+        return True
 
     @bot.tree.command(name="rps", description="Rock paper scissors against Phoebe.")
     @app_commands.describe(bet="How much Amber to bet")
     async def rps(interaction: discord.Interaction, bet: app_commands.Range[int, 1, MAX_BET]):
-        if not await start_bet(interaction, bet):
-            return
-        active.add(interaction.user.id)
-        view = RPSView(interaction.user.id, bet)
-        await interaction.response.send_message(
-            f"Betting **{format_currency(bet)}**. Pick your move:", view=view)
-        view.message = await interaction.original_response()
+        await run_rps(interaction, bet)
 
+    # --------------------------------------------------------------- blackjack
     class BlackjackView(OwnedView):
         def __init__(self, uid: int, bet: int):
             super().__init__(timeout=60)
@@ -242,6 +290,10 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
                 e.description = result
             return e
 
+        def replay_view(self) -> ReplayView:
+            bet = self.bet
+            return ReplayView(self.uid, lambda i: run_blackjack(i, bet, True))
+
         def finalize(self, outcome: str) -> discord.Embed:
             payout, text, color = {
                 "blackjack": (self.bet + self.bet * 3 // 2, "Blackjack! Pays 3:2.", discord.Color.green()),
@@ -257,19 +309,24 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
             self.stop()
             return self.embed(f"{text} {net_text(self.bet, payout)}", color)
 
+        async def _finish(self, interaction: discord.Interaction, outcome: str):
+            replay = self.replay_view()
+            await interaction.response.edit_message(embed=self.finalize(outcome), view=replay)
+            replay.message = interaction.message
+
         async def dealer_turn(self, interaction: discord.Interaction):
             while hand_value(self.dealer) < 17:
                 self.dealer.append(self.deck.pop())
             p, d = hand_value(self.player), hand_value(self.dealer)
             outcome = "win" if d > 21 or p > d else "push" if p == d else "lose"
-            await interaction.response.edit_message(embed=self.finalize(outcome), view=self)
+            await self._finish(interaction, outcome)
 
         @discord.ui.button(label="Hit", style=discord.ButtonStyle.primary)
         async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
             self.player.append(self.deck.pop())
             value = hand_value(self.player)
             if value > 21:
-                await interaction.response.edit_message(embed=self.finalize("bust"), view=self)
+                await self._finish(interaction, "bust")
             elif value == 21:
                 await self.dealer_turn(interaction)
             else:
@@ -284,26 +341,31 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
                 embed = self.finalize("timeout")
                 if self.message:
                     try:
-                        await self.message.edit(embed=embed, view=self)
+                        await self.message.edit(embed=embed, view=None)
                     except discord.HTTPException:
                         pass
+
+    async def run_blackjack(interaction: discord.Interaction, bet: int, edit: bool = False) -> bool:
+        if not await start_bet(interaction, bet):
+            return False
+        active.add(interaction.user.id)
+        view = BlackjackView(interaction.user.id, bet)
+
+        if hand_value(view.player) == 21:
+            outcome = "push" if hand_value(view.dealer) == 21 else "blackjack"
+            replay = view.replay_view()
+            replay.message = await respond(interaction, edit, embed=view.finalize(outcome), view=replay)
+            return True
+
+        view.message = await respond(interaction, edit, embed=view.embed(), view=view)
+        return True
 
     @bot.tree.command(name="blackjack", description="Play blackjack against her")
     @app_commands.describe(bet="How much Amber to bet")
     async def blackjack(interaction: discord.Interaction, bet: app_commands.Range[int, 1, MAX_BET]):
-        if not await start_bet(interaction, bet):
-            return
-        active.add(interaction.user.id)
-        view = BlackjackView(interaction.user.id, bet)
+        await run_blackjack(interaction, bet)
 
-        if hand_value(view.player) == 21: 
-            outcome = "push" if hand_value(view.dealer) == 21 else "blackjack"
-            await interaction.response.send_message(embed=view.finalize(outcome))
-            return
-
-        await interaction.response.send_message(embed=view.embed(), view=view)
-        view.message = await interaction.original_response()
-
+    # ------------------------------------------------------------------- guess
     class GuessModal(discord.ui.Modal, title="Make a guess"):
         number = discord.ui.TextInput(label="Pick a number from 1 to 100", min_length=1, max_length=3)
 
@@ -367,7 +429,9 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
         async def _end(self, interaction, color, note):
             active.discard(self.uid)
             self.stop()
-            await interaction.response.edit_message(embed=self.embed(note, color), view=None)
+            replay = ReplayView(self.uid, lambda i: run_guess(i, True))
+            await interaction.response.edit_message(embed=self.embed(note, color), view=replay)
+            replay.message = interaction.message
 
         async def on_timeout(self):
             active.discard(self.uid)
@@ -380,15 +444,19 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
                 except discord.HTTPException:
                     pass
 
-    @bot.tree.command(name="guess", description="Guess the number.")
-    async def guess_cmd(interaction: discord.Interaction):
+    async def run_guess(interaction: discord.Interaction, edit: bool = False) -> bool:
         if not await start_free(interaction, "guess", GUESS_COOLDOWN):
-            return
+            return False
         active.add(interaction.user.id)
         view = GuessView(interaction.user.id)
-        await interaction.response.send_message(embed=view.embed(), view=view)
-        view.message = await interaction.original_response()
+        view.message = await respond(interaction, edit, embed=view.embed(), view=view)
+        return True
 
+    @bot.tree.command(name="guess", description="Guess the number.")
+    async def guess_cmd(interaction: discord.Interaction):
+        await run_guess(interaction)
+
+    # ----------------------------------------------------------------- hangman
     class HangmanLetterModal(discord.ui.Modal, title="Guess a letter"):
         letter = discord.ui.TextInput(label="Single letter (a-z)", min_length=1, max_length=1)
 
@@ -496,8 +564,10 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
         async def _end(self, interaction, color, note, reveal=False):
             active.discard(self.uid)
             self.stop()
+            replay = ReplayView(self.uid, lambda i: run_hangman(i, True))
             await interaction.response.edit_message(
-                embed=self.embed(note, color, reveal=reveal), view=None)
+                embed=self.embed(note, color, reveal=reveal), view=replay)
+            replay.message = interaction.message
 
         async def on_timeout(self):
             active.discard(self.uid)
@@ -510,15 +580,18 @@ def register(bot, *, balances_data, get_balance, save_balances, format_currency,
                 except discord.HTTPException:
                     pass
 
-    @bot.tree.command(name="hangman", description="Guess the words.")
-    async def hangman_cmd(interaction: discord.Interaction):
+    async def run_hangman(interaction: discord.Interaction, edit: bool = False) -> bool:
         if not HANGMAN_WORDS:
             await interaction.response.send_message(
                 "Hangman is unavailable right now (word list missing).", ephemeral=True)
-            return
+            return False
         if not await start_free(interaction, "hangman", HANGMAN_COOLDOWN):
-            return
+            return False
         active.add(interaction.user.id)
         view = HangmanView(interaction.user.id)
-        await interaction.response.send_message(embed=view.embed(), view=view)
-        view.message = await interaction.original_response()
+        view.message = await respond(interaction, edit, embed=view.embed(), view=view)
+        return True
+
+    @bot.tree.command(name="hangman", description="Guess the words.")
+    async def hangman_cmd(interaction: discord.Interaction):
+        await run_hangman(interaction)
